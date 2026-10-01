@@ -28,6 +28,9 @@ Servo myServo;
 // Buzzer
 const int buzzerPin = 8;
 
+// Photoresistor module, DO pin (digital bright/dark, threshold set by the module's pot)
+const int lightPin = 12;
+
 // === TUNING ===
 int turnTime = 550; // ms — increase for wider turns
 int stopDist = 35;  // cm — how close before stopping (obstacle mode)
@@ -99,6 +102,11 @@ const unsigned long ENV_INTERVAL_MS = 2000; // how often to poll the sensor
 float lastTemp     = 0;
 float lastHumidity = 0;
 
+// === LIGHT SENSOR ===
+// Typical LDR modules pull DO low when it's brighter than the pot threshold.
+const unsigned long LIGHT_POLL_MS = 100;
+int lastLight = -1;   // 1 bright, 0 dark, -1 not read yet (forces the first report)
+
 // === LIGHTING ===
 unsigned long lastStrobeTime = 0;
 bool strobeState = false;
@@ -163,6 +171,7 @@ void setup() {
   pinMode(ledB, OUTPUT);
 
   pinMode(buzzerPin, OUTPUT);
+  pinMode(lightPin, INPUT);
 
   myServo.attach(11);
 
@@ -203,6 +212,7 @@ void loop() {
   checkIR();
   checkSerial();
   updateEnvSensor();
+  updateLightSensor();
 
   if (driveMode != MODE_OBSTACLE) {
     checkManualGuard();
@@ -308,6 +318,19 @@ void updateEnvSensor() {
 
   Serial.print("TEMP:"); Serial.println(lastTemp, 1);
   Serial.print("HUM:");  Serial.println(lastHumidity, 1);
+}
+
+// =====================
+// Reports "LIGHT:1" (bright) / "LIGHT:0" (dark) whenever the module's DO flips.
+void updateLightSensor() {
+  static unsigned long lastLightPoll = 0;
+  if (millis() - lastLightPoll < LIGHT_POLL_MS) return;
+  lastLightPoll = millis();
+
+  int light = (digitalRead(lightPin) == LOW) ? 1 : 0;
+  if (light == lastLight) return;
+  lastLight = light;
+  Serial.print("LIGHT:"); Serial.println(lastLight);
 }
 
 // =====================

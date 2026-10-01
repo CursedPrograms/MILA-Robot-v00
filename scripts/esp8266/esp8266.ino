@@ -33,6 +33,7 @@ int    lastMotorL  = 0;       // actual track state from the Arduino: -1 back, 0
 int    lastMotorR  = 0;
 float  lastTemp    = 0;
 float  lastHumidity = 0;
+int    lastLight   = -1;      // photoresistor: 1 bright, 0 dark, -1 not reported yet
 int    lastSpeed   = 100;
 bool   lastGuard   = false;   // true while the manual-mode collision guard has force-stopped the robot
 
@@ -129,6 +130,7 @@ void loop() {
     if (line.startsWith("IR:"))    lastIR    = line.substring(3);
     if (line.startsWith("TEMP:"))  lastTemp     = line.substring(5).toFloat();
     if (line.startsWith("HUM:"))   lastHumidity = line.substring(4).toFloat();
+    if (line.startsWith("LIGHT:")) lastLight    = line.substring(6).toInt();
     if (line.startsWith("SPEED:")) lastSpeed    = line.substring(6).toInt();
     if (line.startsWith("GUARD:")) lastGuard    = line.substring(6).toInt() != 0;
     if (line.startsWith("MOTOR:")) {
@@ -256,6 +258,7 @@ void handleStatus() {
   json += "\"ir\":\""    + lastIR             + "\",";
   json += "\"temp\":"    + String(lastTemp, 1)     + ",";
   json += "\"hum\":"     + String(lastHumidity, 1) + ",";
+  json += "\"light\":"   + String(lastLight)       + ",";
   json += "\"ip\":\""    + currentIP()             + "\",";
   json += "\"fleet\":"   + String(fleetMode ? 1 : 0) + ",";
   json += "\"speed\":"   + String(lastSpeed) + ",";
