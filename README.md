@@ -29,6 +29,11 @@
 
 - Robot Type: Tank
 
+<div align="center">
+  <img src="images/mila-robot-front.png" alt="MILA Robot front view" width="400"/>
+  <img src="images/mila-robot-side.png" alt="MILA Robot side view" width="400"/>
+</div>
+
 ---
 
 ### Software
@@ -42,7 +47,7 @@
 - [KIDA-Robot-v00](https://github.com/CursedPrograms/KIDA-Robot-v00)
 - [KIDA-Robot-v01](https://github.com/CursedPrograms/KIDA-Robot-v01)
 - [NORA-Robot-v00](https://github.com/CursedPrograms/NORA-Robot-v00)
-- [MILA-Robot-v01](https://github.com/CursedPrograms/MILA)
+- [IDA-Robot-v01](https://github.com/CursedPrograms/IDA-Robot-v00)
 - [ARM-Robot-v01](https://github.com/CursedPrograms/ARM-Robot-v01)
 - [RIFT](https://github.com/CursedPrograms/RIFT)
 - [DREAM](https://github.com/CursedPrograms/DREAM)
