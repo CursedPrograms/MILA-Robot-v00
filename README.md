@@ -31,7 +31,9 @@
 
 <div align="center">
   <img src="images/mila-robot-front.png" alt="MILA Robot front view" width="400"/>
+  <img src="images/mila-robot-angle.png" alt="MILA Robot angled view" width="400"/>
   <img src="images/mila-robot-side.png" alt="MILA Robot side view" width="400"/>
+  <img src="images/mila-robot-top.png" alt="MILA Robot top view" width="400"/>
 </div>
 
 ---
