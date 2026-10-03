@@ -87,7 +87,30 @@ MILA is a small tank-chassis robot you can drive over WiFi. It hosts its own web
 
 ## Quick start
 
-Flash the firmware from `scripts/esp8266` and `scripts/MILA` with the Arduino IDE, power the robot on, and join her WiFi network. Then open the dashboard in a browser, or run a desktop controller:
+### DIP switches (UNO + WiFi R3 board)
+
+The board's 8 DIP switches choose what the USB port and the two chips are connected to. Switch 8 is unused.
+
+| What you're doing | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| **Running MILA** (Arduino ↔ ESP8266) | ON | ON | off | off | off | off | off | off |
+| **Upload `scripts/MILA`** (USB → ATmega328) | off | off | ON | ON | off | off | off | off |
+| **Upload `scripts/esp8266`** (USB → ESP8266, flash mode) | off | off | off | off | ON | ON | ON | off |
+| **ESP8266 Serial Monitor** (USB ↔ ESP8266) | off | off | off | off | ON | ON | off | off |
+| USB ↔ ATmega328 ↔ ESP8266 all linked | ON | ON | ON | ON | off | off | off | off |
+
+1. Set **3 + 4 ON** and upload `scripts/MILA`.
+2. Set **5 + 6 + 7 ON** and upload `scripts/esp8266` (press reset if the upload won't start).
+3. Set **1 + 2 ON**, everything else off, and power-cycle to drive her.
+
+In the running setting the Arduino's serial goes to the ESP, not USB, so the Serial Monitor shows nothing. Use 3 + 4 to read her `DIST:` / `IR:` lines over USB.
+
+> [!NOTE]
+> Check this against the table printed on your board, as some clones differ slightly.
+
+### Flash and connect
+
+Flash the firmware from `scripts/esp8266` and `scripts/MILA` with the Arduino IDE (set the DIP switches above first), power the robot on, and join her WiFi network. Then open the dashboard in a browser, or run a desktop controller:
 
 ```
 ./run.sh                      # macOS / Linux / Git Bash

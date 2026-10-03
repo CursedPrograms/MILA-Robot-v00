@@ -32,26 +32,42 @@ const int buzzerPin = 8;
 const int lightPin = 12;
 
 // === TUNING ===
-int turnTime = 550; // ms — increase for wider turns
-int stopDist = 35;  // cm — how close before stopping (obstacle mode)
-int guardDist = 15; // cm — how close before force-stopping while driving forward in WASD/TANK
-const unsigned long GUARD_POLL_MS = 150; // how often to check the front sensor outside obstacle mode
+int turnTime = 550;                       // ms — increase for wider turns
+int stopDist = 35;                        // cm — how close before stopping (obstacle mode)
+int diagStopDist = 35;                    // cm — same, for the diagonal looks
+int backupTime = 250;                     // ms — reverse this long before the scan so the tracks have room to pivot (0 = off)
+int guardDist = 15;                       // cm — how close before force-stopping while driving forward in WASD/TANK
+const unsigned long GUARD_POLL_MS = 150;  // how often to check the front sensor outside obstacle mode
+
+// While driving in obstacle mode the sensor looks ahead and to both
+// diagonals in turn. A wall met at an angle bounces the ping away from a
+// straight-ahead sensor, so it reads as clear; the diagonal looks face
+// the wall more squarely and catch it before a track corner does.
+// 130 = left diagonal, 50 = right diagonal. Only the straight-ahead look
+// is reported as DIST, so telemetry keeps meaning "front distance".
+const int lookAngles[] = { 90, 130, 90, 50 };
+const int NUM_LOOKS = 4;
+const int LOOK_SETTLE_MS = 120;  // let the servo stop before pinging
+int lookIndex = 0;
 
 // === SPEED ===
 // Single-button speed control (X on the dashboard keyboard, OK on the IR
 // remote) cycles through these presets rather than needing separate +/-,
 // since the remote only has the one spare button to give it.
-const int speedPresets[] = {100, 75, 50, 25};
+const int speedPresets[] = { 100, 75, 50, 25 };
 const int NUM_SPEED_PRESETS = 4;
 int speedIndex = 0;
-int speedPct   = 100;
+int speedPct = 100;
 
-int pwmSpeed() { return (255 * speedPct) / 100; }
+int pwmSpeed() {
+  return (255 * speedPct) / 100;
+}
 
 void cycleSpeed() {
   speedIndex = (speedIndex + 1) % NUM_SPEED_PRESETS;
-  speedPct   = speedPresets[speedIndex];
-  Serial.print("SPEED:"); Serial.println(speedPct);
+  speedPct = speedPresets[speedIndex];
+  Serial.print("SPEED:");
+  Serial.println(speedPct);
 }
 
 // Sets speed directly (dashboard slider), rather than stepping through
@@ -61,34 +77,40 @@ void setSpeedPct(int v) {
   v = constrain(v, 0, 100);
   speedPct = v;
   for (int i = 0; i < NUM_SPEED_PRESETS; i++) {
-    if (speedPresets[i] == v) { speedIndex = i; break; }
+    if (speedPresets[i] == v) {
+      speedIndex = i;
+      break;
+    }
   }
-  Serial.print("SPEED:"); Serial.println(speedPct);
+  Serial.print("SPEED:");
+  Serial.println(speedPct);
 }
 
 // === IR REMOTE ===
 // Codes read directly off this remote via the dashboard's "LAST IR" readout.
-#define IR_FORWARD  0x74
+#define IR_FORWARD 0x74
 #define IR_BACKWARD 0x75
-#define IR_LEFT     0x34
-#define IR_RIGHT    0x33
-#define IR_OK       0x65
+#define IR_LEFT 0x34
+#define IR_RIGHT 0x33
+#define IR_OK 0x65
 
-#define IR_MODE_WASD     0x0   // "1"
-#define IR_MODE_TANK     0x1   // "2"
-#define IR_MODE_OBSTACLE 0x2   // "3"
+#define IR_MODE_WASD 0x0      // "1"
+#define IR_MODE_TANK 0x1      // "2"
+#define IR_MODE_OBSTACLE 0x2  // "3"
 
-#define IR_RED    0x25   // tank: left track forward
-#define IR_GREEN  0x26   // tank: left track backward
-#define IR_YELLOW 0x27   // tank: right track forward
-#define IR_BLUE   0x24   // tank: right track backward
+#define IR_RED 0x25     // tank: left track forward
+#define IR_GREEN 0x26   // tank: left track backward
+#define IR_YELLOW 0x27  // tank: right track forward
+#define IR_BLUE 0x24    // tank: right track backward
 
-#define IR_MUTE   0x00   // TODO: fill in real hex code — toggles buzzer silent mode
+// Toggles buzzer silent mode. Off until the real code is known: press the
+// button with the Serial Monitor open, then uncomment this with its IR:0x.. value.
+// #define IR_MUTE   0x00
 
-const unsigned long IR_HOLD_MS = 350; // no repeat frame within this long = WASD button released
-unsigned long lastIRMs  = 0;
-uint8_t       lastIRCmd = 0;
-bool          irDriving = false;   // true while a held WASD-mode IR key is driving the motors
+const unsigned long IR_HOLD_MS = 350;  // no repeat frame within this long = WASD button released
+unsigned long lastIRMs = 0;
+uint8_t lastIRCmd = 0;
+bool irDriving = false;  // true while a held WASD-mode IR key is driving the motors
 
 // Tank mode is button-toggled, not held: an IR receiver only ever decodes
 // one button at a time, so "hold both tracks forward" isn't possible the
@@ -98,14 +120,14 @@ bool leftFwdOn = false, leftBwdOn = false, rightFwdOn = false, rightBwdOn = fals
 
 // === AHT10 (I2C temp/humidity) ===
 #define AHT10_ADDR 0x38
-const unsigned long ENV_INTERVAL_MS = 2000; // how often to poll the sensor
-float lastTemp     = 0;
+const unsigned long ENV_INTERVAL_MS = 2000;  // how often to poll the sensor
+float lastTemp = 0;
 float lastHumidity = 0;
 
 // === LIGHT SENSOR ===
 // Typical LDR modules pull DO low when it's brighter than the pot threshold.
 const unsigned long LIGHT_POLL_MS = 100;
-int lastLight = -1;   // 1 bright, 0 dark, -1 not read yet (forces the first report)
+int lastLight = -1;  // 1 bright, 0 dark, -1 not read yet (forces the first report)
 
 // === LIGHTING ===
 unsigned long lastStrobeTime = 0;
@@ -116,28 +138,44 @@ bool strobeState = false;
 // so you get audible confirmation the board booted even if muted last time.
 bool buzzerSilent = false;
 
+// On an Uno, tone() and IRremote share Timer2: a plain tone() leaves the
+// timer reconfigured and the IR receiver dead until reset. So the receiver
+// is paused for the length of the beep and restarted afterwards (as in
+// IRremote's ReceiveDemo). Blocks for durMs.
+void playTone(unsigned int freq, unsigned int durMs) {
+  IrReceiver.stopTimer();
+  tone(buzzerPin, freq, durMs);
+  delay(durMs);
+  IrReceiver.restartTimer();
+}
+
 void beep(unsigned int freq, unsigned int durMs) {
   if (buzzerSilent) return;
-  tone(buzzerPin, freq, durMs);
+  playTone(freq, durMs);
 }
 
 void setBuzzerSilent(bool silent) {
   buzzerSilent = silent;
-  Serial.print("BUZZER:"); Serial.println(buzzerSilent ? 0 : 1);
+  Serial.print("BUZZER:");
+  Serial.println(buzzerSilent ? 0 : 1);
 }
 
 // === SEQUENCES ===
 const int cmySeq[3][3] = {
-  {0,   255, 255},
-  {255, 0,   255},
-  {255, 255, 0  }
+  { 0, 255, 255 },
+  { 255, 0, 255 },
+  { 255, 255, 0 }
 };
 
 // === MODE & STATE ===
-enum DriveMode { MODE_WASD, MODE_TANK, MODE_OBSTACLE };
-DriveMode driveMode = MODE_WASD;   // WASD is the boot default
+enum DriveMode { MODE_WASD,
+                 MODE_TANK,
+                 MODE_OBSTACLE };
+DriveMode driveMode = MODE_WASD;  // WASD is the boot default
 
-enum RobotState { MOVING_FORWARD, TURNING, STOPPED };
+enum RobotState { MOVING_FORWARD,
+                  TURNING,
+                  STOPPED };
 RobotState robotState = STOPPED;
 
 // True while the most recent manual command was a forward-driving one
@@ -148,11 +186,11 @@ RobotState robotState = STOPPED;
 // still running forward — an accepted simplification given tank driving
 // already has no held-state tracking for the web/pygame command path.
 bool intentForward = false;
-bool guardActive   = false; // true once the guard has force-stopped the robot
+bool guardActive = false;  // true once the guard has force-stopped the robot
 
 // === SENSOR CACHE (for ESP reporting) ===
-long lastDist  = 0;
-long lastLeft  = 0;
+long lastDist = 0;
+long lastLeft = 0;
 long lastRight = 0;
 
 // =====================
@@ -163,8 +201,12 @@ void setup() {
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
 
-  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT); pinMode(ENA, OUTPUT);
-  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT); pinMode(ENB, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENA, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENB, OUTPUT);
 
   pinMode(ledR, OUTPUT);
   pinMode(ledG, OUTPUT);
@@ -182,12 +224,15 @@ void setup() {
   initAHT10();
 
   // Servo sweep test
-  myServo.write(30);  delay(500);
-  myServo.write(150); delay(500);
-  myServo.write(90);  delay(300);
+  myServo.write(30);
+  delay(500);
+  myServo.write(150);
+  delay(500);
+  myServo.write(90);
+  delay(300);
 
   // Startup tone always plays, even in silent mode, so booting is audible.
-  tone(buzzerPin, 2000, 200);
+  playTone(2000, 200);
 
   stopMotors();
 
@@ -203,8 +248,10 @@ void setup() {
   Serial.println("LEFT:0");
   Serial.println("RIGHT:0");
   Serial.println("TURN:");
-  Serial.print("SPEED:"); Serial.println(speedPct);
-  Serial.print("BUZZER:"); Serial.println(buzzerSilent ? 0 : 1);
+  Serial.print("SPEED:");
+  Serial.println(speedPct);
+  Serial.print("BUZZER:");
+  Serial.println(buzzerSilent ? 0 : 1);
 }
 
 // =====================
@@ -221,35 +268,54 @@ void loop() {
   }
 
   // === OBSTACLE AVOIDANCE ===
-  myServo.write(90);
-  delay(300);
-  lastDist = getDistance();
+  int angle = lookAngles[lookIndex];
+  lookIndex = (lookIndex + 1) % NUM_LOOKS;
+  myServo.write(angle);
+  delay(LOOK_SETTLE_MS);
+  long d = getDistance();
 
-  Serial.print("DIST:"); Serial.println(lastDist);
+  if (angle == 90) {
+    lastDist = d;
+    Serial.print("DIST:");
+    Serial.println(d);
+  } else {
+    Serial.print(angle > 90 ? "DIAG_L:" : "DIAG_R:");
+    Serial.println(d);
+  }
 
-  if (lastDist > stopDist) {
+  if (d > (angle == 90 ? stopDist : diagStopDist)) {
     forward();
     robotState = MOVING_FORWARD;
     updateLighting();
 
   } else {
     stopMotors();
+    lookIndex = 0;
     robotState = STOPPED;
     updateLighting();
     beep(400, 150);
-    delay(300);
+    delay(100);
+
+    if (backupTime > 0) {
+      backward();
+      delay(backupTime);
+      stopMotors();
+    }
+    delay(200);
 
     // Scan left
     myServo.write(150);
     delay(500);
     lastLeft = getDistance();
-    Serial.print("LEFT:"); Serial.println(lastLeft);
+    Serial.print("LEFT:");
+    Serial.println(lastLeft);
 
     // Scan right
     myServo.write(30);
     delay(500);
     lastRight = getDistance();
-    Serial.print("RIGHT:"); Serial.println(lastRight);
+    Serial.print("RIGHT:");
+    Serial.println(lastRight);
 
     // Return to center
     myServo.write(90);
@@ -283,9 +349,11 @@ void initAHT10() {
   Wire.requestFrom(AHT10_ADDR, 1);
   uint8_t status = Wire.available() ? Wire.read() : 0;
 
-  if ((status & 0x68) != 0x08) {   // calibration bit not set — (re)initialize
+  if ((status & 0x68) != 0x08) {  // calibration bit not set — (re)initialize
     Wire.beginTransmission(AHT10_ADDR);
-    Wire.write(0xE1); Wire.write(0x08); Wire.write(0x00);
+    Wire.write(0xE1);
+    Wire.write(0x08);
+    Wire.write(0x00);
     Wire.endTransmission();
     delay(10);
   }
@@ -298,26 +366,30 @@ void updateEnvSensor() {
   lastEnvMs = millis();
 
   Wire.beginTransmission(AHT10_ADDR);
-  Wire.write(0xAC); Wire.write(0x33); Wire.write(0x00);
-  if (Wire.endTransmission() != 0) return;   // sensor not responding
+  Wire.write(0xAC);
+  Wire.write(0x33);
+  Wire.write(0x00);
+  if (Wire.endTransmission() != 0) return;  // sensor not responding
 
-  delay(80);   // AHT10 needs ~75ms to complete a measurement
+  delay(80);  // AHT10 needs ~75ms to complete a measurement
 
   Wire.requestFrom(AHT10_ADDR, 6);
   if (Wire.available() < 6) return;
 
   uint8_t buf[6];
   for (int i = 0; i < 6; i++) buf[i] = Wire.read();
-  if (buf[0] & 0x80) return;   // busy flag still set — try again next cycle
+  if (buf[0] & 0x80) return;  // busy flag still set — try again next cycle
 
-  uint32_t rawHum  = ((uint32_t)buf[1] << 12) | ((uint32_t)buf[2] << 4) | (buf[3] >> 4);
+  uint32_t rawHum = ((uint32_t)buf[1] << 12) | ((uint32_t)buf[2] << 4) | (buf[3] >> 4);
   uint32_t rawTemp = ((uint32_t)(buf[3] & 0x0F) << 16) | ((uint32_t)buf[4] << 8) | buf[5];
 
-  lastHumidity = (rawHum  / 1048576.0) * 100.0;
-  lastTemp     = (rawTemp / 1048576.0) * 200.0 - 50.0;
+  lastHumidity = (rawHum / 1048576.0) * 100.0;
+  lastTemp = (rawTemp / 1048576.0) * 200.0 - 50.0;
 
-  Serial.print("TEMP:"); Serial.println(lastTemp, 1);
-  Serial.print("HUM:");  Serial.println(lastHumidity, 1);
+  Serial.print("TEMP:");
+  Serial.println(lastTemp, 1);
+  Serial.print("HUM:");
+  Serial.println(lastHumidity, 1);
 }
 
 // =====================
@@ -330,7 +402,8 @@ void updateLightSensor() {
   int light = (digitalRead(lightPin) == LOW) ? 1 : 0;
   if (light == lastLight) return;
   lastLight = light;
-  Serial.print("LIGHT:"); Serial.println(lastLight);
+  Serial.print("LIGHT:");
+  Serial.println(lastLight);
 }
 
 // =====================
@@ -352,7 +425,7 @@ void checkIR() {
     // no repeat frame arrived in time — treat the WASD button as released
     stopMotors();
     robotState = STOPPED;
-    irDriving  = false;
+    irDriving = false;
     intentForward = false;
     updateLighting();
   }
@@ -362,7 +435,7 @@ void checkIR() {
 void resetManualState() {
   stopMotors();
   robotState = STOPPED;
-  irDriving  = false;
+  irDriving = false;
   leftFwdOn = leftBwdOn = rightFwdOn = rightBwdOn = false;
   intentForward = false;
   clearGuard();
@@ -389,7 +462,8 @@ void checkManualGuard() {
   lastGuardPoll = millis();
 
   lastDist = getDistance();
-  Serial.print("DIST:"); Serial.println(lastDist);
+  Serial.print("DIST:");
+  Serial.println(lastDist);
 
   if (intentForward && lastDist > 0 && lastDist < guardDist) {
     stopMotors();
@@ -405,13 +479,13 @@ void checkManualGuard() {
 
 // Applies the four tank-track toggle latches to the motor pins.
 void applyTankMotors() {
-  if      (leftFwdOn)  leftMotorFwd();
-  else if (leftBwdOn)  leftMotorBwd();
-  else                 leftMotorOff();
+  if (leftFwdOn) leftMotorFwd();
+  else if (leftBwdOn) leftMotorBwd();
+  else leftMotorOff();
 
-  if      (rightFwdOn) rightMotorFwd();
+  if (rightFwdOn) rightMotorFwd();
   else if (rightBwdOn) rightMotorBwd();
-  else                 rightMotorOff();
+  else rightMotorOff();
 
   robotState = (leftFwdOn || leftBwdOn || rightFwdOn || rightBwdOn) ? MOVING_FORWARD : STOPPED;
   intentForward = (leftFwdOn || rightFwdOn);
@@ -441,40 +515,82 @@ void runIRCommand(uint8_t cmd) {
       cycleSpeed();
       break;
 
+#ifdef IR_MUTE
     case IR_MUTE:
       setBuzzerSilent(!buzzerSilent);
       break;
+#endif
 
     case IR_FORWARD:
-      if (driveMode == MODE_WASD) { clearGuard(); intentForward = true;  forward();   robotState = MOVING_FORWARD; irDriving = true; }
+      if (driveMode == MODE_WASD) {
+        clearGuard();
+        intentForward = true;
+        forward();
+        robotState = MOVING_FORWARD;
+        irDriving = true;
+      }
       break;
 
     case IR_BACKWARD:
-      if (driveMode == MODE_WASD) { clearGuard(); intentForward = false; backward();  robotState = MOVING_FORWARD; irDriving = true; }
+      if (driveMode == MODE_WASD) {
+        clearGuard();
+        intentForward = false;
+        backward();
+        robotState = MOVING_FORWARD;
+        irDriving = true;
+      }
       break;
 
     case IR_LEFT:
-      if (driveMode == MODE_WASD) { clearGuard(); intentForward = false; turnLeft();  robotState = TURNING;        irDriving = true; }
+      if (driveMode == MODE_WASD) {
+        clearGuard();
+        intentForward = false;
+        turnLeft();
+        robotState = TURNING;
+        irDriving = true;
+      }
       break;
 
     case IR_RIGHT:
-      if (driveMode == MODE_WASD) { clearGuard(); intentForward = false; turnRight(); robotState = TURNING;        irDriving = true; }
+      if (driveMode == MODE_WASD) {
+        clearGuard();
+        intentForward = false;
+        turnRight();
+        robotState = TURNING;
+        irDriving = true;
+      }
       break;
 
     case IR_RED:
-      if (driveMode == MODE_TANK) { leftFwdOn = !leftFwdOn; leftBwdOn = false; applyTankMotors(); }
+      if (driveMode == MODE_TANK) {
+        leftFwdOn = !leftFwdOn;
+        leftBwdOn = false;
+        applyTankMotors();
+      }
       break;
 
     case IR_GREEN:
-      if (driveMode == MODE_TANK) { leftBwdOn = !leftBwdOn; leftFwdOn = false; applyTankMotors(); }
+      if (driveMode == MODE_TANK) {
+        leftBwdOn = !leftBwdOn;
+        leftFwdOn = false;
+        applyTankMotors();
+      }
       break;
 
     case IR_YELLOW:
-      if (driveMode == MODE_TANK) { rightFwdOn = !rightFwdOn; rightBwdOn = false; applyTankMotors(); }
+      if (driveMode == MODE_TANK) {
+        rightFwdOn = !rightFwdOn;
+        rightBwdOn = false;
+        applyTankMotors();
+      }
       break;
 
     case IR_BLUE:
-      if (driveMode == MODE_TANK) { rightBwdOn = !rightBwdOn; rightFwdOn = false; applyTankMotors(); }
+      if (driveMode == MODE_TANK) {
+        rightBwdOn = !rightBwdOn;
+        rightFwdOn = false;
+        applyTankMotors();
+      }
       break;
   }
   updateLighting();
@@ -584,7 +700,7 @@ void updateLighting() {
       strobeState = !strobeState;
       lastStrobeTime = now;
       if (strobeState) setColor(255, 255, 255);
-      else             setColor(0,   0,   0  );
+      else setColor(0, 0, 0);
     }
 
   } else {
@@ -626,78 +742,102 @@ void reportMotors(int l, int r) {
   if (l == motorL && r == motorR) return;
   motorL = l;
   motorR = r;
-  Serial.print("MOTOR:"); Serial.print(l); Serial.print(","); Serial.println(r);
+  Serial.print("MOTOR:");
+  Serial.print(l);
+  Serial.print(",");
+  Serial.println(r);
 }
 
 void stopMotors() {
   reportMotors(0, 0);
-  digitalWrite(ENA, LOW); digitalWrite(ENB, LOW);
-  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
+  digitalWrite(ENA, LOW);
+  digitalWrite(ENB, LOW);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
 }
 
 void forward() {
   reportMotors(1, 1);
-  analogWrite(ENA, pwmSpeed()); analogWrite(ENB, pwmSpeed());
-  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+  analogWrite(ENA, pwmSpeed());
+  analogWrite(ENB, pwmSpeed());
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
 }
 
 void backward() {
   reportMotors(-1, -1);
-  analogWrite(ENA, pwmSpeed()); analogWrite(ENB, pwmSpeed());
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH);
+  analogWrite(ENA, pwmSpeed());
+  analogWrite(ENB, pwmSpeed());
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
 }
 
 void turnLeft() {
   reportMotors(-1, 1);
-  analogWrite(ENA, pwmSpeed()); analogWrite(ENB, pwmSpeed());
-  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH);
+  analogWrite(ENA, pwmSpeed());
+  analogWrite(ENB, pwmSpeed());
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
   if (driveMode == MODE_OBSTACLE) delay(turnTime);
 }
 
 void turnRight() {
   reportMotors(1, -1);
-  analogWrite(ENA, pwmSpeed()); analogWrite(ENB, pwmSpeed());
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+  analogWrite(ENA, pwmSpeed());
+  analogWrite(ENB, pwmSpeed());
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
   if (driveMode == MODE_OBSTACLE) delay(turnTime);
 }
 
 void leftMotorFwd() {
   reportMotors(1, motorR);
   analogWrite(ENB, pwmSpeed());
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
 }
 
 void leftMotorBwd() {
   reportMotors(-1, motorR);
   analogWrite(ENB, pwmSpeed());
-  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
 }
 
 void leftMotorOff() {
   reportMotors(0, motorR);
   analogWrite(ENB, 0);
-  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
 }
 
 void rightMotorFwd() {
   reportMotors(motorL, 1);
   analogWrite(ENA, pwmSpeed());
-  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
 }
 
 void rightMotorBwd() {
   reportMotors(motorL, -1);
   analogWrite(ENA, pwmSpeed());
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
 }
 
 void rightMotorOff() {
   reportMotors(motorL, 0);
   analogWrite(ENA, 0);
-  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
 }
