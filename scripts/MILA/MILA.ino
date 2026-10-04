@@ -683,7 +683,9 @@ void checkSerial() {
   String cmd = Serial.readStringUntil('\n');
   cmd.trim();
 
-  if (cmd.startsWith("TALK:")) {
+  if (cmd == "WHO") {
+    Serial.println("I am Mila");   // the fleet-wide handshake
+  } else if (cmd.startsWith("TALK:")) {
     talk(cmd.substring(5).toInt());
   } else if (cmd == "OBSTACLE") {
     driveMode = MODE_OBSTACLE;

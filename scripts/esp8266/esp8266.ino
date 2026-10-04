@@ -124,6 +124,7 @@ void loop() {
   while (Serial.available()) {
     String line = Serial.readStringUntil('\n');
     line.trim();
+    if (line == "WHO") Serial.println("I am MilaWifi");   // the fleet-wide handshake (the UNO ignores it)
     if (line.startsWith("DIST:"))  lastDist  = line.substring(5).toFloat();
     if (line.startsWith("LEFT:"))  lastLeft  = line.substring(5);
     if (line.startsWith("RIGHT:")) lastRight = line.substring(6);
