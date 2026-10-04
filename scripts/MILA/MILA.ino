@@ -662,6 +662,20 @@ void runIRCommand(uint8_t cmd) {
   updateLighting();
 }
 
+// ---- TALKING: the fleet's conversations, in Brainfuck ----
+// "TALK:<u>" says utterance u (0-6 phrases, 7-13 replies; see talk_bf.h): a
+// Brainfuck program that prints the words, beeped one tone per symbol, a
+// little higher for MILA. Played through beep(), so it pauses the IR receiver
+// and respects MUTE; only while she's stopped outside OBSTACLE mode, since
+// it blocks for the 1-4 s it takes.
+#include "talk_bf.h"
+const uint8_t TALK_VOICE_PCT = 115;
+
+void talk(int u) {
+  if (robotState != STOPPED || driveMode == MODE_OBSTACLE) return;
+  talkPlayBlocking(u, TALK_VOICE_PCT, beep);
+}
+
 // =====================
 void checkSerial() {
   if (!Serial.available()) return;
@@ -669,7 +683,9 @@ void checkSerial() {
   String cmd = Serial.readStringUntil('\n');
   cmd.trim();
 
-  if (cmd == "OBSTACLE") {
+  if (cmd.startsWith("TALK:")) {
+    talk(cmd.substring(5).toInt());
+  } else if (cmd == "OBSTACLE") {
     driveMode = MODE_OBSTACLE;
     resetManualState();
 
