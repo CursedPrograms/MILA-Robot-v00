@@ -81,6 +81,7 @@ void setup() {
   server.on("/mode",   handleMode);
   server.on("/status", handleStatus);
   server.on("/fleet",  handleFleet);
+  server.on("/chirp",  handleChirp);
 
   server.begin();
 
@@ -152,7 +153,8 @@ void fleetRegister() {
   WiFiClient client;
   if (!client.connect(fleetHost, 5000)) return;
 
-  String body = "name=MILA&type=tank&capabilities=wasd,tank,obstacle_avoidance";
+  // talk:<port> = RIFT's conversations can /chirp here
+  String body = "name=MILA&type=tank&capabilities=wasd,tank,obstacle_avoidance,talk:5010";
   client.print(String("POST /register HTTP/1.1\r\n") +
                "Host: " + fleetHost.toString() + "\r\n" +
                "Content-Type: application/x-www-form-urlencoded\r\n" +
@@ -160,6 +162,20 @@ void fleetRegister() {
                "Connection: close\r\n\r\n" +
                body);
   client.stop();
+}
+
+// =====================
+// RIFT's fleet conversations: /chirp?u=<0-13> says that utterance (a Brainfuck
+// phrase, see ../MILA/talk_bf.h) on the UNO's buzzer, which beeps it.
+void handleChirp() {
+  int u = server.hasArg("u") ? server.arg("u").toInt() : -1;
+  if (!server.hasArg("u") || u < 0 || u > 13) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"use /chirp?u=0-13\"}");
+    return;
+  }
+  Serial.print("TALK:");
+  Serial.println(u);
+  server.send(200, "application/json", "{\"ok\":true}");
 }
 
 // =====================
@@ -278,6 +294,7 @@ void handleRoot() {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MILA</title>
+<link rel="icon" href="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAAgACADASIAAhEBAxEB/8QAGQAAAgMBAAAAAAAAAAAAAAAABQcDBAYI/8QAKhAAAgIBAwQCAQMFAAAAAAAAAQIDBBEFITEABhJBE1EiB3HBFEJhgaH/xAAXAQADAQAAAAAAAAAAAAAAAAADBQYE/8QAJBEAAQMDAwQDAAAAAAAAAAAAAQIDEQAhMQQFQVGBkfASEyL/2gAMAwEAAhEDEQA/AOaqcDWbUcCnHmwGcZxvzj31r+39Xp6LbSpBpkF5XZomjkrI8vy5wPzyQf8AgHH31mNIVh/VWA/h8Fdm8s8ZIX+ejXZ08E2qVa0l1a4iRmgisSFkFhhu2RuBsDj76oGbQeaQa5sPApVdIyPe3uWBqfbOma5Qhqah21L29qtwMdPuJCEhkkAJEbgHG+Dzg8Ecbpy5Wmp25athDHNE5R1Pojp3dy3e76PZlnS9Ul0m85lhs14EdTLHErZZ18T+WGxud8En/AW36rDy71t2VgaGK0qTxq3Piw4z7xuPvbfouqQI+QEUn2F15DqmlqBSZIgki0Ym9wcYBBjNUu1rNGOvqVa25jksQBYmxsSDnBProHp919N1IXK0azIjYZSvI/f1xz0Qijo6hpsMcNV68wf8rDPkcHxGPR2z/o4+uqDM7VY2swMc5VJIwAW33znY/uOgGQkCqBCU/Ys9cg+LeKYJ7uOtQValR70Vj5UimhlRfD4gwcJ5g53cJyOPfrqX9dNNsU9Xq2DEhqSxIkMo/FiyqPJWX0cnkjJAHO3WE0aRamrRyGxM1dyvzSGPx8GP9p+j01u900q/2dHWs3Z/mhi+Ws3iGRWwCsYPIXDOf42z1pu60ZzU/qkjRbgwtA/JkG3WL9o54r//2Q==">
 <style>
   :root {
     --bg:      #0a0a0f;
@@ -309,8 +326,9 @@ void handleRoot() {
     align-items: center;
     gap: 14px;
   }
+  .logo-ring img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
   .logo-ring {
-    width: 40px; height: 40px;
+    width: 40px; height: 40px; overflow: hidden;
     border-radius: 50%;
     border: 2px solid var(--accent);
     display: flex; align-items: center; justify-content: center;
@@ -478,7 +496,7 @@ void handleRoot() {
 <body>
 
 <header>
-  <div class="logo-ring">M</div>
+  <div class="logo-ring"><img id="face" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAA4ADgDASIAAhEBAxEB/8QAGgAAAgMBAQAAAAAAAAAAAAAAAAQFBgcCA//EADEQAAIBAwMDAwEIAQUAAAAAAAECAwAEEQUSIRMxQQZRYYEUIjJxkaGxwRUWQlKC0f/EABkBAAMBAQEAAAAAAAAAAAAAAAMEBQIBBv/EACcRAAEEAQMDAwUAAAAAAAAAAAEAAgMRIRIxQQQFIhNxoVFhscHw/9oADAMBAAIRAxEAPwDHq9ba2lu51hhQs5/b5PxXlUrYxollK8rbYZUKsB+JyDnA+Bin2izSUlfobYT9l/j9M2JfaZIzsSGnmXcpPsuDwP3/AIqyNbem2YI2n27rtBBjQoW+OD+5NUrbqD6bHdgNHAH6cMhfKo2M4JJyDjtU/wCmNAjv4IZbm9mTdgkRkMCnbHPbnyKYYRtSk9VCCDIZCK3olPar6CimsTc6N1BOoLtbSHII74Vv+QHg96z8ggkEEEdwa1PUNFu/SVxDqFtdGXThKBKSMSID2Ofbx9arPrOwhMy6raKvRuWJYqMYJ5wR75zyO49iDnMsYGQh9s65ziGOfra7Y/fkH9cqpUUUUuryKdvE6NrbCRXCiMMw98nt/dJYJ4UZJ7CpnX4GiuYzG4dEAQAcj349uaIwYJQJHebW+6Wjto7i8ggtDIkLbGkHfaSDn6e351ZbqXU7KTbaxGFGjzFMJAiY9hwcn4NUmKSXqjayxFio37sFcHg1pfprVrizHSuJlYE4YgZUH35okdHCW6vUxuoAOrgri99Rax/o5xqVv12nZomkePbsXbkkgEc88e/0qN1K8ju/QtlIpKTIGWZQM7wScfuc/HIqW1XUY5JdV+139jNZLbs/2ZfvNI2ML8AgnuKVisFHpe7QRmSLpK02zuv3SSwz3wQDj86I4EgqWBHHpdp0+QONsjbPv+Fn1FdOu1sAgg8gjyPFFJr0i6t5BFcRuc7QwJx3xU/rdxa31pFcQsSAgWTPgjjP14qJtdKurzHSUHgnk4wB5PsPzpF3aKRopy2CSrAHG3HHftRGkt35S742ySAg5avFwrM7pyMmpfS/UctmiwzRmWIcDaeQKUMCLHHNA24D8fYkDH8fNLhwiSKBkkbcgd64LabRiGvFEWrNqGqWOqW9pb2q3US9TqTmVspjxtHirfBYT33pApbljqcZUhUIV0xkbk5GTtPb+6zTTZo+n05AdpBU/Xsf1FaTomq3KwQw3EXXQnpxg8NFIFAGG8Bue/GSPmmYzqGVB7pG+NrfT4N5/vhZve9dbp1uDmRTgnbjP0wKKl/VdoY9Ue4VmcOAJSyFHV/O9T2J/QnP5UUq4UaVrp5BJE1wURY3d0xMay7RKwyGHBP+0nx7163CobKbqkiZG+8rHO2Qd/of/KKK2D4rjgBJhKC3mt4BcKskee5IwAPHI/uuobhy+65jSaPG0s4HH/YfzRRWSKOFoHWMrmMSJcC7MB+z724A4A8/pWgaDqcYsJJ0Me7K5DLuUjwSO47dxRRRoTRpIdxjbJHn618pf1Dq32rTbi1uIQZdxkSVwNyoU3D7w/EAwwD5BooooUptyN22NrIvHlf/2Q==" alt="M"></div>
   <div class="logo-text">
     <h1>M I L A</h1>
     <p>MINIATURE INTEGRATED LOGIC AUTOMATON</p>
