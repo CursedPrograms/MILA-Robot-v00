@@ -1236,6 +1236,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
     wc.lpfnWndProc = wndProc;
     wc.hInstance = inst;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));  // mila_controller.rc: MILA's avatar
     wc.lpszClassName = L"MilaController";
     RegisterClassW(&wc);
 

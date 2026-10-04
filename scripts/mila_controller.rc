@@ -1,0 +1,2 @@
+// Window / exe icon: MILA's avatar (images/mila.ico). Built by run-cpp.* with windres.
+1 ICON "../images/mila.ico"

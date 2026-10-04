@@ -30,6 +30,11 @@
 - Robot Type: Tank
 
 <div align="center">
+  <img src="images/mila_avatar.jpg" alt="MILA avatar: a human representation of the robot" width="320"/>
+  <p><i>MILA</i></p>
+</div>
+
+<div align="center">
   <img src="images/mila-robot-front.png" alt="MILA Robot front view" width="400"/>
   <img src="images/mila-robot-angle.png" alt="MILA Robot angled view" width="400"/>
   <img src="images/mila-robot-side.png" alt="MILA Robot side view" width="400"/>
@@ -72,16 +77,31 @@ MILA is a small tank-chassis robot you can drive over WiFi. It hosts its own web
 
 ## Hardware
 
-- Small Tank Robot Chassis
-- Arduino Bluetooth (Integrated ESP8266)
-- 2S 18650
-- L298N
-- MG95 Servo
-- Ultrasonic Sensor
-- 5V DC Motors
+- Small metal tank robot chassis
+- UNO + WiFi R3 style board (ATmega328P + integrated ESP8266)
+- 2S 18650 battery pack
+- L298N motor driver
+- MG95 servo
+- HC-SR04 ultrasonic sensor
+- 2× 5 V DC motors
 - RGB LED
-- Temperature & Humidity Sensor
-- IR Receiver
+- AHT10 temperature & humidity sensor (I2C)
+- Photoresistor module (digital out)
+- Buzzer
+- NEC IR receiver + remote
+
+### Pinout (`scripts/MILA/MILA.ino`)
+
+| Signal | Pin | | Signal | Pin |
+|---|---|---|---|---|
+| Ultrasonic TRIG / ECHO | 2 / 3 | | Servo | 11 |
+| Right motor IN1 / IN2 / ENA | 4 / 5 / 9 | | Buzzer | 8 |
+| Left motor IN3 / IN4 / ENB | 6 / 7 / 10 | | Light sensor (DO) | 12 |
+| RGB LED R / G / B | A0 / A1 / A2 | | IR receiver | A3 |
+| AHT10 SDA / SCL | A4 / A5 | | ESP8266 link | Serial (DIP 1 + 2) |
+
+> [!WARNING]
+> **Speed control and the servo share a timer.** ENA and ENB are on pins 9 and 10, which the Servo library takes over (Timer1). At 100 % speed the motors are switched fully on and work. At 75 / 50 / 25 % the PWM is lost, so the motors may barely move or stop, and the servo can twitch. Fix it by swapping four wires and the matching constants in `MILA.ino`: **ENA ↔ IN2** (ENA → 5, IN2 → 9) and **ENB ↔ IN3** (ENB → 6, IN3 → 10). Pins 5 and 6 are Timer0 PWM, which nothing else uses.
 
 ---
 
@@ -176,6 +196,19 @@ Columns: `session,t_s,split,mode,mode_id,dist,dist_valid,d_dist,dist_avg5,dist_m
 scripts/run-sim.sh
 scripts/run-cpp.sh --host 127.0.0.1
 ```
+
+## Screenshots
+
+<div align="center">
+  <img src="images/screenshots/controller-cpp.png" alt="C++ controller" width="420"/>
+  <img src="images/screenshots/controller-csharp.png" alt="C# controller" width="420"/>
+  <img src="images/screenshots/controller-python.png" alt="Python controller" width="260"/>
+  <img src="images/screenshots/web-dashboard.png" alt="Web dashboard" width="640"/>
+</div>
+
+<p align="center"><i>C++ controller, C# controller, Python controller, Web dashboard. Running against MockMila (<code>scripts/sim</code>), so the telemetry is live.</i></p>
+
+---
 
 <br>
 <div align="center">© Cursed Entertainment 2026</div>

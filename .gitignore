@@ -63,3 +63,6 @@ __pycache__/
 /scripts/**/obj/
 /scripts/fortran/*.exe
 /scripts/fortran/*.mod
+
+# windres output from run-cpp.*
+*.o
