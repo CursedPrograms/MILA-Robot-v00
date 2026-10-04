@@ -119,6 +119,21 @@ def stat_tile(surf, font_label, font_val, x, y, w, label, value):
     surf.blit(font_val.render(str(value), True, ACCENT), (x + 8, y + 20))
 
 
+def round_avatar(path, size):
+    """The robot's avatar as a circular surface, or None if it can't be loaded.
+    The one place the avatar is loaded: swap in animation frames here later."""
+    try:
+        img = pygame.transform.smoothscale(pygame.image.load(path).convert(), (size, size))
+    except (pygame.error, OSError):
+        return None
+    mask = pygame.Surface((size, size), pygame.SRCALPHA)
+    pygame.draw.circle(mask, (255, 255, 255, 255), (size // 2, size // 2), size // 2)
+    out = pygame.Surface((size, size), pygame.SRCALPHA)
+    out.blit(img, (0, 0))
+    out.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="192.168.4.1")
@@ -135,6 +150,7 @@ def main():
     except (pygame.error, OSError):
         pass
     clock = pygame.time.Clock()
+    avatar = round_avatar(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "images", "mila_avatar.jpg"), 52)
     f_big = pygame.font.SysFont("monospace", 26, bold=True)
     f_med = pygame.font.SysFont("monospace", 15, bold=True)
     f_sml = pygame.font.SysFont("monospace", 12)
@@ -266,6 +282,8 @@ def main():
             except (TypeError, ValueError):
                 pass
 
+        if avatar:
+            screen.blit(avatar, (16, 10))
         title = f_big.render("MILA", True, ACCENT)
         screen.blit(title, title.get_rect(centerx=W // 2, y=14))
         conn = "connected" if link.ok else "OFFLINE"
