@@ -157,6 +157,8 @@
         <p>MILA drives on her own, scanning with the servo-mounted sensor and turning away from whatever is in the way.</p>
       </div>
     </div>
+    <h3 class="sub">Driven by NORA</h3>
+    <p class="muted"><a href="https://cursedprograms.github.io/NORA-Robot-v00/">NORA</a> can drive MILA through her IR transmitter: Samsung-format IR at address <code>0x0DA2</code>, with the fleet link&rsquo;s commands <code>0x48</code>&ndash;<code>0x4F</code> (drive, stop, obstacle, manual, speed). Driving switches her into WASD mode; <code>stop</code> also leaves OBSTACLE mode, and <code>speed</code> cycles the speed like the OK button. She stops once the link has been quiet for 500 ms. Link frames print as <code>LINK:0x..</code>.</p>
   </div>
 </section>
 

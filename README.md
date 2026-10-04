@@ -142,6 +142,9 @@ run.bat                       # Windows (cmd)
 
 If MILA joined NORA's network (fleet mode) she won't be at `192.168.4.1`. Press **SCAN NETWORK** in the C++, C# or F# controller, or start it with `--host auto`.
 
+### Driven by NORA (fleet IR link)
+[NORA](https://github.com/CursedPrograms/NORA-Robot-v00) can drive MILA through her IR transmitter, from her web page, Python controller or Bluetooth. The frames are Samsung-format IR at address `0x0DA2`, with the fleet link's commands: `0x48` forward, `0x49` back, `0x4A` left, `0x4B` right, `0x4C` stop, `0x4D` obstacle mode, `0x4E` manual, `0x4F` speed. Driving switches her into WASD mode; `stop` also leaves OBSTACLE mode, and `speed` cycles the speed like the OK button. She stops once the link has been quiet for 500 ms. Link frames print as `LINK:0x..`.
+
 ## Desktop controllers
 
 Every controller lives in [`scripts/`](scripts) and has a build-and-run script in `.sh`, `.bat` and `.ps1` form.

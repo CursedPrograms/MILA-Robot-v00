@@ -111,6 +111,25 @@ const unsigned long IR_HOLD_MS = 350;  // no repeat frame within this long = WAS
 unsigned long lastIRMs = 0;
 uint8_t lastIRCmd = 0;
 bool irDriving = false;  // true while a held WASD-mode IR key is driving the motors
+unsigned long holdMs = IR_HOLD_MS;  // release timeout for the current drive (remote or link)
+
+// === FLEET LINK (commands relayed by NORA) ===
+// NORA's web page, Python controller and Bluetooth link can drive MILA through
+// NORA's IR transmitter: Samsung-format frames at MILA_LINK_ADDRESS, with the
+// same command codes the whole fleet link uses (IDA is 0x0DA1, WHIP 0x0DA3,
+// KIDA-01 0x0DA4). Drive commands are re-sent every 150 ms while held; MILA
+// stops once they've been quiet for LINK_HOLD_MS. Each command is translated
+// to the matching remote button, so it behaves exactly like the remote.
+#define MILA_LINK_ADDRESS 0x0DA2
+#define LINK_FORWARD   0x48
+#define LINK_BACKWARD  0x49
+#define LINK_LEFT      0x4A
+#define LINK_RIGHT     0x4B
+#define LINK_STOP      0x4C
+#define LINK_OBSTACLE  0x4D
+#define LINK_MANUAL    0x4E   // WASD mode
+#define LINK_SPEED     0x4F   // cycle speed (the OK button)
+const unsigned long LINK_HOLD_MS = 500;
 
 // Tank mode is button-toggled, not held: an IR receiver only ever decodes
 // one button at a time, so "hold both tracks forward" isn't possible the
@@ -423,10 +442,19 @@ void updateLightSensor() {
 // =====================
 void checkIR() {
   if (IrReceiver.decode()) {
-    if (IrReceiver.decodedIRData.protocol != UNKNOWN) {
+    if (IrReceiver.decodedIRData.protocol == SAMSUNG && IrReceiver.decodedIRData.address == MILA_LINK_ADDRESS) {
+      bool isRepeat = IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT;
+      uint8_t c = IrReceiver.decodedIRData.command;
+      lastIRMs = millis();
+      Serial.print("LINK:0x");
+      Serial.println(c, HEX);
+      runLinkCommand(c, isRepeat);
+
+    } else if (IrReceiver.decodedIRData.protocol != UNKNOWN) {
       bool isRepeat = IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT;
       if (!isRepeat) lastIRCmd = IrReceiver.decodedIRData.command;
       lastIRMs = millis();
+      if (!isRepeat) holdMs = IR_HOLD_MS;
 
       Serial.print("IR:0x");
       Serial.println(lastIRCmd, HEX);
@@ -435,13 +463,37 @@ void checkIR() {
     }
     IrReceiver.resume();
 
-  } else if (driveMode == MODE_WASD && irDriving && millis() - lastIRMs > IR_HOLD_MS) {
+  } else if (driveMode == MODE_WASD && irDriving && millis() - lastIRMs > holdMs) {
     // no repeat frame arrived in time — treat the WASD button as released
     stopMotors();
     robotState = STOPPED;
     irDriving = false;
     intentForward = false;
     updateLighting();
+  }
+}
+
+// A command relayed by NORA over the fleet link, run as the matching remote
+// button. Driving switches MILA into WASD mode first, so one press from NORA
+// is enough; repeated frames keep the drive alive until the link goes quiet.
+void runLinkCommand(uint8_t c, bool isRepeat) {
+  uint8_t ir = 0;
+  switch (c) {
+    case LINK_FORWARD:  ir = IR_FORWARD;  break;
+    case LINK_BACKWARD: ir = IR_BACKWARD; break;
+    case LINK_LEFT:     ir = IR_LEFT;     break;
+    case LINK_RIGHT:    ir = IR_RIGHT;    break;
+    case LINK_STOP:     runIRCommand(IR_MODE_WASD); return;   // stops, and leaves obstacle mode
+    case LINK_OBSTACLE: if (!isRepeat) runIRCommand(IR_MODE_OBSTACLE); return;
+    case LINK_MANUAL:   if (!isRepeat) runIRCommand(IR_MODE_WASD);     return;
+    case LINK_SPEED:    if (!isRepeat) runIRCommand(IR_OK);            return;
+    default: return;
+  }
+  if (driveMode != MODE_WASD) runIRCommand(IR_MODE_WASD);
+  holdMs = LINK_HOLD_MS;
+  if (!irDriving || ir != lastIRCmd) {
+    lastIRCmd = ir;
+    runIRCommand(ir);
   }
 }
 
