@@ -203,6 +203,37 @@ scripts/run-sim.sh
 scripts/run-cpp.sh --host 127.0.0.1
 ```
 
+## 📡 Who's nearby (ESP-NOW + Bluetooth LE)
+
+Every robot sends a small **"I'm here"** beacon twice a second and listens for the others'. From the **signal strength** it knows roughly how close each one is, and from how that changes over time whether it's **coming closer, steady or leaving**:
+
+| Signal | Zone |
+| :--- | :--- |
+| above −45 dBm | very close |
+| −45 to −60 dBm | near |
+| −60 to −75 dBm | medium |
+| below −75 dBm | far |
+
+It's coarse (walls, bodies and antenna angle all change it): for "who's around", not distance. Precise collision avoidance stays with the ultrasonic and ToF sensors.
+
+**They tell each other what they're doing**, because a rising signal looks the same from both sides even when only one robot moves. Over ESP-NOW they say it **in Brainfuck**, like the fleet's conversations: each beacon carries a program that prints `park`, `go`, `wait` or `hand` (a human is driving), and the receiver runs it. Bluetooth adverts are too small for a program, so BLE carries the same state as one byte.
+
+**Who makes way**, in self-driving modes only:
+
+| The other robot... | So this one... |
+| :--- | :--- |
+| is parked | is the one closing in: steers away |
+| is yielding | carries on, carefully |
+| is driven by a human | makes way (it's unpredictable) |
+| drives itself | follows the alphabet: KIDA00, KIDA01, NORA, WHIP; everyone makes way for MILA, who can't hear the others |
+| is leaving | carries on |
+
+Making way = stop for 2 s, turn away, then drive on (and not yield again for 5 s, so two robots that stay close don't take turns forever). While another robot is near, or coming closer, it drives slower with wider margins.
+
+MILA's ESP8266 **sends** the beacon over ESP-NOW, with what she's doing said in Brainfuck (`go` in obstacle mode, `hand` when you drive her, `park` when she's stopped), so NORA and WHIP know where she is. Her ESP8266 can't report the signal strength of what it receives, so she can't avoid the others: **they always make way for her**. Code: `scripts/esp8266/esp8266.ino`.
+
+---
+
 ## Screenshots
 
 <div align="center">

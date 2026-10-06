@@ -25,6 +25,7 @@
       <li><a href="#hardware">Hardware</a></li>
       <li><a href="#modes">Modes</a></li>
       <li><a href="#controllers">Controllers</a></li>
+      <li><a href="#near">Nearby</a></li>
       <li><a href="#screens">Screens</a></li>
       <li><a href="https://github.com/CursedPrograms/MILA">GitHub</a></li>
     </ul>
@@ -250,6 +251,20 @@ Action distribution (kept rows):
     <p class="muted">A mock MILA lives in <code>scripts/sim</code>. It serves the same endpoints as the firmware with simulated sensor data:</p>
 <pre><span class="p">$</span> scripts/run-sim.sh
 <span class="p">$</span> scripts/run-cpp.sh --host 127.0.0.1</pre>
+  </div>
+</section>
+
+<section id="near">
+  <div class="wrap">
+    <h2>Who's nearby</h2>
+    <h3 class="title">ESP-NOW + Bluetooth LE: the robots sense each other</h3>
+    <p class="muted">Every robot sends a small "I'm here" beacon twice a second. The signal strength says roughly how close each one is, and how it changes says whether it's <b>coming closer</b>, <b>steady</b> or <b>leaving</b>. Coarse, for "who's around": the ultrasonic and ToF sensors still do the precise avoiding.</p>
+    <div class="grid cols-3">
+      <div class="card"><span class="k">Zones</span><h4>Very close to far</h4><p>Above &minus;45 dBm very close, &minus;60 near, &minus;75 medium, below that far.</p></div>
+      <div class="card"><span class="k">Talk</span><h4>In Brainfuck</h4><p>Over ESP-NOW each beacon carries a program that prints <code>park</code>, <code>go</code>, <code>wait</code> or <code>hand</code>; the receiver runs it. RIFT decodes them too.</p></div>
+      <div class="card"><span class="k">Manners</span><h4>Who makes way</h4><p>A parked robot isn't the one moving; a yielding one is making way; a human-driven one gets space; otherwise the alphabet decides, and everyone makes way for MILA.</p></div>
+    </div>
+    <p class="muted spaced">MILA's ESP8266 <b>sends</b> the beacon over ESP-NOW, saying what she's doing in Brainfuck, so NORA and WHIP know where she is. It can't measure the others, so she can't avoid them: <b>they always make way for her</b>.</p>
   </div>
 </section>
 

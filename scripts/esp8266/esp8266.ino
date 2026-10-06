@@ -2,6 +2,53 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <ArduinoOTA.h>
+#include <espnow.h>
+
+// === FLEET PROXIMITY (ESP-NOW) ===
+// MILA broadcasts the fleet's "I'm here" beacon (same packet as NORA's and
+// WHIP's fleet_near.h) twice a second, so the ESP32 robots can tell how close
+// she is from its signal strength, and what she's doing - said in Brainfuck,
+// like the fleet's conversations: a program that prints park / go / hand.
+// Send-only: the ESP8266's ESP-NOW library doesn't report the RSSI of what it
+// receives, so she can't avoid the others - they always make way for her.
+struct __attribute__((packed)) FleetBeacon {
+  char magic[4];      // "DRFL"
+  uint8_t version;    // 1
+  char name[12];
+  uint16_t seq;
+  char bf[72];        // Brainfuck that prints her state word
+};
+const char* const FLEET_BF_PARK = "++++++++[>++++++++++++++<-]>.---------------.<++++[>++++<-]>+.-------.";
+const char* const FLEET_BF_GO   = "++++++++[>+++++++++++++<-]>-.++++++++.";
+const char* const FLEET_BF_HAND = "++++++++[>+++++++++++++<-]>.-------.+++++++++++++.----------.";
+String currentMode = "wasd";   // up here: the beacon below says what she is doing
+String lastCommand = "STOP";
+uint8_t fleetBroadcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+bool fleetNearOk = false;
+uint16_t fleetSeq = 0;
+unsigned long fleetNextBeaconMs = 0;
+
+void fleetNearBegin() {
+  if (esp_now_init() != 0) return;
+  esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
+  esp_now_add_peer(fleetBroadcast, ESP_NOW_ROLE_COMBO, 0, NULL, 0);   // channel 0 = the one the WiFi is on
+  fleetNearOk = true;
+}
+
+void fleetNearLoop() {
+  if (!fleetNearOk || millis() < fleetNextBeaconMs) return;
+  fleetNextBeaconMs = millis() + 500 + random(0, 60);
+  FleetBeacon b;
+  memset(&b, 0, sizeof(b));
+  memcpy(b.magic, "DRFL", 4);
+  b.version = 1;
+  strncpy(b.name, "MILA", sizeof(b.name) - 1);
+  b.seq = fleetSeq++;
+  // driving herself (obstacle mode), driven by you, or standing still
+  const char* say = currentMode == "obstacle" ? FLEET_BF_GO : lastCommand != "STOP" ? FLEET_BF_HAND : FLEET_BF_PARK;
+  strncpy(b.bf, say, sizeof(b.bf) - 1);
+  esp_now_send(fleetBroadcast, (uint8_t*)&b, sizeof(b));
+}
 
 // === WIFI ===
 // On boot, try to join NORA's network as a station (so MILA and NORA can
@@ -16,14 +63,48 @@ const unsigned long WIFI_JOIN_TIMEOUT_MS = 8000;
 
 const IPAddress fleetHost(192, 168, 4, 1);   // NORA's fixed AP gateway address
 const unsigned long FLEET_HEARTBEAT_MS = 15000;   // NORA drops entries after 20s of silence
+
+// === RADAR (passive imposter spotter) ===
+// MILA listens to the WiFi around her and flags anything that isn't one of
+// our own networks as an "imposter". This is passive: she only scans and
+// reports. She never connects to or touches a network that isn't hers.
+const char* const FLEET_SSIDS[] = { "NORA", "MILA", "WHIP" };
+const unsigned long RADAR_SCAN_MS = 20000;   // rescan at most this often
+String radarJson = "{\"scanning\":false,\"nets\":[]}";
+unsigned long lastRadarScan = 0;
+bool radarInFlight = false;
+
+bool isFleetSsid(const String& s) {
+  for (unsigned i = 0; i < sizeof(FLEET_SSIDS) / sizeof(FLEET_SSIDS[0]); i++) {
+    if (s == FLEET_SSIDS[i]) return true;
+  }
+  return false;
+}
+
+String jsonEscape(const String& in) {
+  String out;
+  for (unsigned i = 0; i < in.length(); i++) {
+    char c = in[i];
+    if (c == '"' || c == '\\') { out += '\\'; out += c; }
+    else if (c == '\n' || c == '\r' || c == '\t') { out += ' '; }
+    else out += c;
+  }
+  return out;
+}
+
+// === CONTROL LOCK ===
+// A device must unlock with the PIN before it can drive MILA. The unlocked
+// device is remembered by IP; a new device must re-enter the PIN. Looking
+// (the page, /status, /radar) is always allowed; driving is not.
+const char* const CONTROL_PIN = "1234";
+IPAddress controllerIP(0, 0, 0, 0);
+bool controllerUnlocked = false;
 bool fleetMode = false;   // true = joined NORA's network; false = running our own AP
 
 // === WEB SERVER ===
 ESP8266WebServer server(5010);
 
 // === STATE ===
-String currentMode = "wasd";
-String lastCommand = "STOP";
 float  lastDist    = 0;
 String lastLeft    = "---";
 String lastRight   = "---";
@@ -81,11 +162,14 @@ void setup() {
   server.on("/mode",   handleMode);
   server.on("/status", handleStatus);
   server.on("/fleet",  handleFleet);
+  server.on("/radar",  handleRadar);
+  server.on("/unlock", handleUnlock);
   server.on("/chirp",  handleChirp);
 
   server.begin();
 
   if (fleetMode) fleetRegister();
+  fleetNearBegin();
 
   if (MDNS.begin("mila")) {
     MDNS.addService("http", "tcp", 5010);
@@ -100,6 +184,8 @@ void setup() {
 
 // =====================
 void loop() {
+  fleetNearLoop();
+  radarLoop();
   server.handleClient();
   ArduinoOTA.handle();
   MDNS.update();
@@ -185,6 +271,64 @@ String currentIP() {
 }
 
 // =====================
+// Passive WiFi radar. Kick off an async scan no more than every
+// RADAR_SCAN_MS, then pick up the result on a later loop and cache it as
+// JSON. Each network is tagged friend/imposter; we never touch imposters.
+void radarLoop() {
+  if (!radarInFlight && millis() - lastRadarScan >= RADAR_SCAN_MS) {
+    // async = true (non-blocking), show_hidden = true
+    WiFi.scanNetworks(true, true);
+    radarInFlight = true;
+    lastRadarScan = millis();
+    return;
+  }
+
+  if (radarInFlight) {
+    int n = WiFi.scanComplete();
+    if (n == WIFI_SCAN_RUNNING || n == WIFI_SCAN_FAILED) {
+      if (n == WIFI_SCAN_FAILED) radarInFlight = false;
+      return;
+    }
+    // Scan finished with n networks: build the cached report.
+    int imposters = 0;
+    String j = "{\"scanning\":false,\"nets\":[";
+    for (int i = 0; i < n; i++) {
+      String ssid = WiFi.SSID(i);
+      String shown = ssid.length() ? jsonEscape(ssid) : "(hidden)";
+      bool fleet = ssid.length() && isFleetSsid(ssid);
+      if (!fleet) imposters++;
+      if (i) j += ",";
+      j += "{\"ssid\":\"" + shown + "\",";
+      j += "\"rssi\":" + String(WiFi.RSSI(i)) + ",";
+      j += "\"imposter\":" + String(fleet ? "false" : "true") + "}";
+    }
+    j += "],\"imposters\":" + String(imposters) + "}";
+    radarJson = j;
+    WiFi.scanDelete();
+    radarInFlight = false;
+  }
+}
+
+void handleRadar() {
+  server.send(200, "application/json", radarJson);
+}
+
+bool isController() {
+  return controllerUnlocked && server.client().remoteIP() == controllerIP;
+}
+
+void handleUnlock() {
+  if (server.hasArg("pw") && server.arg("pw") == CONTROL_PIN) {
+    controllerIP = server.client().remoteIP();
+    controllerUnlocked = true;
+    server.send(200, "application/json",
+                "{\"ok\":true,\"controller\":\"" + controllerIP.toString() + "\"}");
+  } else {
+    server.send(403, "application/json", "{\"ok\":false,\"error\":\"bad pin\"}");
+  }
+}
+
+// =====================
 // Proxies NORA's fleet roster (GET /robots on port 5000) so MILA's own
 // dashboard can show her and any siblings without the browser needing to
 // reach NORA directly.
@@ -227,6 +371,7 @@ void handleFleet() {
 
 // =====================
 void handleCmd() {
+  if (!isController()) { server.send(403, "text/plain", "LOCKED"); return; }
   // Speed control works regardless of drive mode — both the preset cycle
   // and the dashboard's direct slider value ("SPEED:75").
   if (server.hasArg("v")) {
@@ -251,6 +396,7 @@ void handleCmd() {
 }
 
 void handleMode() {
+  if (!isController()) { server.send(403, "text/plain", "LOCKED"); return; }
   if (server.hasArg("v")) {
     currentMode = server.arg("v");
     if      (currentMode == "obstacle") Serial.println("OBSTACLE");
@@ -496,6 +642,15 @@ void handleRoot() {
 </head>
 <body>
 
+<div id="lockOverlay" style="position:fixed;inset:0;background:rgba(5,8,16,0.96);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:'Courier New',monospace;color:#00d4ff">
+  <div style="font-size:1.4rem;letter-spacing:3px">&#128274; MILA LOCKED</div>
+  <div style="opacity:0.7;font-size:0.85rem">Enter controller PIN to drive</div>
+  <input id="pinInput" type="password" inputmode="numeric" maxlength="12" placeholder="PIN"
+         style="font-size:1.4rem;text-align:center;padding:10px 16px;width:160px;background:#0b1020;border:1px solid #00d4ff;color:#00d4ff;border-radius:8px;letter-spacing:6px">
+  <button id="pinBtn" style="font-size:1rem;padding:10px 24px;background:#00d4ff;color:#041018;border:0;border-radius:8px;cursor:pointer">UNLOCK</button>
+  <div id="pinMsg" style="color:#ff4444;font-size:0.8rem;min-height:1em"></div>
+</div>
+
 <header>
   <div class="logo-ring"><img id="face" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAA4ADgDASIAAhEBAxEB/8QAGgAAAgMBAQAAAAAAAAAAAAAAAAQFBgcCA//EADEQAAIBAwMDAwEIAQUAAAAAAAECAwAEEQUSIRMxQQZRYYEUIjJxkaGxwRUWQlKC0f/EABkBAAMBAQEAAAAAAAAAAAAAAAMEBQIBBv/EACcRAAEEAQMDAwUAAAAAAAAAAAEAAgMRIRIxQQQFIhNxoVFhscHw/9oADAMBAAIRAxEAPwDHq9ba2lu51hhQs5/b5PxXlUrYxollK8rbYZUKsB+JyDnA+Bin2izSUlfobYT9l/j9M2JfaZIzsSGnmXcpPsuDwP3/AIqyNbem2YI2n27rtBBjQoW+OD+5NUrbqD6bHdgNHAH6cMhfKo2M4JJyDjtU/wCmNAjv4IZbm9mTdgkRkMCnbHPbnyKYYRtSk9VCCDIZCK3olPar6CimsTc6N1BOoLtbSHII74Vv+QHg96z8ggkEEEdwa1PUNFu/SVxDqFtdGXThKBKSMSID2Ofbx9arPrOwhMy6raKvRuWJYqMYJ5wR75zyO49iDnMsYGQh9s65ziGOfra7Y/fkH9cqpUUUUuryKdvE6NrbCRXCiMMw98nt/dJYJ4UZJ7CpnX4GiuYzG4dEAQAcj349uaIwYJQJHebW+6Wjto7i8ggtDIkLbGkHfaSDn6e351ZbqXU7KTbaxGFGjzFMJAiY9hwcn4NUmKSXqjayxFio37sFcHg1pfprVrizHSuJlYE4YgZUH35okdHCW6vUxuoAOrgri99Rax/o5xqVv12nZomkePbsXbkkgEc88e/0qN1K8ju/QtlIpKTIGWZQM7wScfuc/HIqW1XUY5JdV+139jNZLbs/2ZfvNI2ML8AgnuKVisFHpe7QRmSLpK02zuv3SSwz3wQDj86I4EgqWBHHpdp0+QONsjbPv+Fn1FdOu1sAgg8gjyPFFJr0i6t5BFcRuc7QwJx3xU/rdxa31pFcQsSAgWTPgjjP14qJtdKurzHSUHgnk4wB5PsPzpF3aKRopy2CSrAHG3HHftRGkt35S742ySAg5avFwrM7pyMmpfS/UctmiwzRmWIcDaeQKUMCLHHNA24D8fYkDH8fNLhwiSKBkkbcgd64LabRiGvFEWrNqGqWOqW9pb2q3US9TqTmVspjxtHirfBYT33pApbljqcZUhUIV0xkbk5GTtPb+6zTTZo+n05AdpBU/Xsf1FaTomq3KwQw3EXXQnpxg8NFIFAGG8Bue/GSPmmYzqGVB7pG+NrfT4N5/vhZve9dbp1uDmRTgnbjP0wKKl/VdoY9Ue4VmcOAJSyFHV/O9T2J/QnP5UUq4UaVrp5BJE1wURY3d0xMay7RKwyGHBP+0nx7163CobKbqkiZG+8rHO2Qd/of/KKK2D4rjgBJhKC3mt4BcKskee5IwAPHI/uuobhy+65jSaPG0s4HH/YfzRRWSKOFoHWMrmMSJcC7MB+z724A4A8/pWgaDqcYsJJ0Me7K5DLuUjwSO47dxRRRoTRpIdxjbJHn618pf1Dq32rTbi1uIQZdxkSVwNyoU3D7w/EAwwD5BooooUptyN22NrIvHlf/2Q==" alt="M"></div>
   <div class="logo-text">
@@ -659,6 +814,29 @@ void handleRoot() {
 <footer>MILA v1.0 &nbsp;|&nbsp; <span id="ipAddr">192.168.4.1</span>:5010 &nbsp;|&nbsp; <span id="uptime">--:--</span></footer>
 
 <script>
+  // --- Control lock: PIN unlock before driving ---
+  let unlocked = false;
+  function doUnlock() {
+    const pin = document.getElementById('pinInput').value;
+    fetch('/unlock?pw=' + encodeURIComponent(pin))
+      .then(r => { if (!r.ok) throw new Error('bad'); return r.json(); })
+      .then(() => {
+        unlocked = true;
+        document.getElementById('lockOverlay').style.display = 'none';
+        document.getElementById('pinMsg').textContent = '';
+      })
+      .catch(() => { document.getElementById('pinMsg').textContent = 'Wrong PIN'; });
+  }
+  function showLock() {
+    unlocked = false;
+    const ov = document.getElementById('lockOverlay');
+    if (ov) ov.style.display = 'flex';
+  }
+  document.getElementById('pinBtn').addEventListener('click', doUnlock);
+  document.getElementById('pinInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doUnlock();
+  });
+
   let mode = 'wasd';
   let scanAngle = 90, scanDir = 1;
   let startTime = Date.now();
@@ -683,9 +861,16 @@ void handleRoot() {
       String(m).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
   }, 1000);
 
+  // Wrap fetch for driving endpoints: a 403 means the server locked us out,
+  // so pop the PIN overlay back up.
+  function driveFetch(url) {
+    return fetch(url).then(r => { if (r.status === 403) showLock(); return r; })
+                     .catch(() => {});
+  }
+
   function setMode(m) {
     mode = m;
-    fetch('/mode?v=' + m);
+    driveFetch('/mode?v=' + m);
     ['wasd','tank','obstacle'].forEach(x => {
       document.getElementById('btn-'   + x).classList.toggle('active', x === m);
       document.getElementById('panel-' + x).classList.toggle('active', x === m);
@@ -707,7 +892,7 @@ void handleRoot() {
   }
 
   function sendCmd(cmd) {
-    fetch('/cmd?v=' + cmd).catch(() => {});
+    driveFetch('/cmd?v=' + cmd);
     document.getElementById('s-cmd').textContent = cmd;
   }
 
@@ -733,13 +918,13 @@ void handleRoot() {
   // X cycles speed presets (100/75/50/25), same button the IR remote's
   // OK key now triggers — mirrors it here for keyboard/touch parity.
   document.addEventListener('keydown', e => {
-    if (e.key.toLowerCase() === 'x') fetch('/cmd?v=SPEEDCYCLE').catch(() => {});
+    if (e.key.toLowerCase() === 'x') driveFetch('/cmd?v=SPEEDCYCLE');
   });
 
   // Speed slider — sends an explicit value rather than stepping presets.
   function setSpeed(v) {
     document.getElementById('speedVal').textContent = v + '%';
-    fetch('/cmd?v=SPEED:' + v).catch(() => {});
+    driveFetch('/cmd?v=SPEED:' + v);
   }
 
   // Telemetry history — a rolling buffer of the last ~24s (60 samples at
