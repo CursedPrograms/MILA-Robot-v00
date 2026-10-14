@@ -95,7 +95,8 @@ String jsonEscape(const String& in) {
 // === CONTROL LOCK ===
 // A device must unlock with the PIN before it can drive MILA. The unlocked
 // device is remembered by IP; a new device must re-enter the PIN. Looking
-// (the page, /status, /radar) is always allowed; driving is not.
+// (the page, /status, /radar, /scan while she's standing still) is always
+// allowed; driving is not.
 const char* const CONTROL_PIN = "1234";
 IPAddress controllerIP(0, 0, 0, 0);
 bool controllerUnlocked = false;
@@ -116,6 +117,9 @@ float  lastTemp    = 0;
 float  lastHumidity = 0;
 int    lastLight   = -1;      // photoresistor: 1 bright, 0 dark, -1 not reported yet
 int    lastSpeed   = 100;
+long   scanL = -1, scanF = -1, scanR = -1;   // the last SCAN, cm (999 = no echo, -1 = never scanned)
+unsigned long scanAtMs = 0;                  // when it came in (0 = never)
+bool   scanBusy    = false;                  // the UNO answered SCAN:BUSY (obstacle mode)
 bool   lastGuard   = false;   // true while the manual-mode collision guard has force-stopped the robot
 
 // === CONNECTION WATCHDOG ===
@@ -164,6 +168,7 @@ void setup() {
   server.on("/fleet",  handleFleet);
   server.on("/radar",  handleRadar);
   server.on("/unlock", handleUnlock);
+  server.on("/scan",   handleScan);
   server.on("/chirp",  handleChirp);
 
   server.begin();
@@ -207,26 +212,39 @@ void loop() {
   }
 
   // Read sensor data from Arduino
-  while (Serial.available()) {
-    String line = Serial.readStringUntil('\n');
-    line.trim();
-    if (line == "WHO") Serial.println("I am MilaWifi");   // the fleet-wide handshake (the UNO ignores it)
-    if (line.startsWith("DIST:"))  lastDist  = line.substring(5).toFloat();
-    if (line.startsWith("LEFT:"))  lastLeft  = line.substring(5);
-    if (line.startsWith("RIGHT:")) lastRight = line.substring(6);
-    if (line.startsWith("TURN:"))  lastTurn  = line.substring(5);
-    if (line.startsWith("IR:"))    lastIR    = line.substring(3);
-    if (line.startsWith("TEMP:"))  lastTemp     = line.substring(5).toFloat();
-    if (line.startsWith("HUM:"))   lastHumidity = line.substring(4).toFloat();
-    if (line.startsWith("LIGHT:")) lastLight    = line.substring(6).toInt();
-    if (line.startsWith("SPEED:")) lastSpeed    = line.substring(6).toInt();
-    if (line.startsWith("GUARD:")) lastGuard    = line.substring(6).toInt() != 0;
-    if (line.startsWith("MOTOR:")) {
-      int comma = line.indexOf(',');
-      if (comma > 6) {
-        lastMotorL = line.substring(6, comma).toInt();
-        lastMotorR = line.substring(comma + 1).toInt();
-      }
+  while (Serial.available()) readArduinoLine();
+}
+
+// One line from the Arduino. Also called while /scan waits for its answer.
+void readArduinoLine() {
+  String line = Serial.readStringUntil('\n');
+  line.trim();
+  if (line == "WHO") Serial.println("I am MilaWifi");   // the fleet-wide handshake (the UNO ignores it)
+  if (line == "SCAN:BUSY") scanBusy = true;
+  else if (line.startsWith("SCAN:")) {                  // SCAN:<left>,<front>,<right>
+    int a = line.indexOf(','), b = line.indexOf(',', a + 1);
+    if (a > 5 && b > a) {
+      scanL = line.substring(5, a).toInt();
+      scanF = line.substring(a + 1, b).toInt();
+      scanR = line.substring(b + 1).toInt();
+      scanAtMs = millis();
+    }
+  }
+  if (line.startsWith("DIST:"))  lastDist  = line.substring(5).toFloat();
+  if (line.startsWith("LEFT:"))  lastLeft  = line.substring(5);
+  if (line.startsWith("RIGHT:")) lastRight = line.substring(6);
+  if (line.startsWith("TURN:"))  lastTurn  = line.substring(5);
+  if (line.startsWith("IR:"))    lastIR    = line.substring(3);
+  if (line.startsWith("TEMP:"))  lastTemp     = line.substring(5).toFloat();
+  if (line.startsWith("HUM:"))   lastHumidity = line.substring(4).toFloat();
+  if (line.startsWith("LIGHT:")) lastLight    = line.substring(6).toInt();
+  if (line.startsWith("SPEED:")) lastSpeed    = line.substring(6).toInt();
+  if (line.startsWith("GUARD:")) lastGuard    = line.substring(6).toInt() != 0;
+  if (line.startsWith("MOTOR:")) {
+    int comma = line.indexOf(',');
+    if (comma > 6) {
+      lastMotorL = line.substring(6, comma).toInt();
+      lastMotorR = line.substring(comma + 1).toInt();
     }
   }
 }
@@ -395,6 +413,43 @@ void handleCmd() {
   }
 }
 
+// GET /scan: a fresh look on demand, for whoever drives her by stop-look-think-move.
+// The UNO stops the tracks, sweeps the sensor left / ahead / right and answers
+// SCAN:<l>,<f>,<r>; this waits for it (about 1.5 s) and returns
+// {"ok":true,"left":cm,"front":cm,"right":cm} (999 = no echo). It only looks:
+// no PIN needed while she's standing still, since only the servo turns. While she
+// moves, the scan would stop her, so then only the unlocked controller may scan.
+// Obstacle mode sweeps and drives on its own: 409. The result also stays in /status.
+const unsigned long SCAN_WAIT_MS = 3000;
+
+void handleScan() {
+  bool moving = lastMotorL != 0 || lastMotorR != 0;
+  if (moving && !isController()) {
+    server.send(403, "application/json", "{\"ok\":false,\"error\":\"she's moving: only the unlocked controller can stop her to look\"}");
+    return;
+  }
+  if (currentMode == "obstacle") {
+    server.send(409, "application/json", "{\"ok\":false,\"error\":\"obstacle mode: she's looking and driving on her own\"}");
+    return;
+  }
+  unsigned long asked = millis();
+  scanBusy = false;
+  Serial.println("SCAN");
+  lastCommand = "STOP";               // the UNO stops the tracks before it looks
+  while (millis() - asked < SCAN_WAIT_MS && !scanBusy && !(scanAtMs != 0 && scanAtMs >= asked)) {
+    while (Serial.available()) readArduinoLine();
+    delay(5);
+  }
+  if (scanBusy) {
+    server.send(409, "application/json", "{\"ok\":false,\"error\":\"obstacle mode: she's looking and driving on her own\"}");
+  } else if (scanAtMs != 0 && scanAtMs >= asked) {
+    server.send(200, "application/json", "{\"ok\":true,\"left\":" + String(scanL) + ",\"front\":" + String(scanF) +
+                                         ",\"right\":" + String(scanR) + ",\"no_echo\":999}");
+  } else {
+    server.send(504, "application/json", "{\"ok\":false,\"error\":\"no answer from the UNO (is it running firmware with SCAN?)\"}");
+  }
+}
+
 void handleMode() {
   if (!isController()) { server.send(403, "text/plain", "LOCKED"); return; }
   if (server.hasArg("v")) {
@@ -427,7 +482,11 @@ void handleStatus() {
   json += "\"speed\":"   + String(lastSpeed) + ",";
   json += "\"guard\":"   + String(lastGuard ? 1 : 0) + ",";
   json += "\"ml\":"      + String(lastMotorL) + ",";
-  json += "\"mr\":"      + String(lastMotorR);
+  json += "\"mr\":"      + String(lastMotorR) + ",";
+  json += "\"scan_l\":"  + String(scanL) + ",";       // the last /scan, cm (999 no echo, -1 never)
+  json += "\"scan_f\":"  + String(scanF) + ",";
+  json += "\"scan_r\":"  + String(scanR) + ",";
+  json += "\"scan_ms\":" + String(scanAtMs ? (long)(millis() - scanAtMs) : -1L);   // how old it is
   json += "}";
   server.send(200, "application/json", json);
 }

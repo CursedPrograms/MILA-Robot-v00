@@ -676,6 +676,50 @@ void talk(int u) {
   talkPlayBlocking(u, TALK_VOICE_PCT, beep);
 }
 
+// ---- SCAN: a fresh look on demand ----
+// "SCAN" stops the tracks, sweeps the sensor left / ahead / right and prints
+// "SCAN:<left>,<front>,<right>" in cm (999 = no echo). It only looks, never
+// drives: whoever asked (an LLM driving her by stop-look-think-move) decides
+// the next move. Obstacle mode is already sweeping and driving on its own, so
+// there it answers "SCAN:BUSY". Blocks about 1.5 s.
+const int SCAN_SETTLE_MS = 350;   // a 60 degree swing, then the servo stops shaking
+
+long scanAt(int angle, int settleMs) {
+  myServo.write(angle);
+  delay(settleMs);
+  return getDistance();
+}
+
+void scanAround() {
+  if (driveMode == MODE_OBSTACLE) {
+    Serial.println("SCAN:BUSY");
+    return;
+  }
+  stopMotors();
+  robotState = STOPPED;
+  intentForward = false;
+  updateLighting();
+
+  lastLeft = scanAt(150, SCAN_SETTLE_MS + 150);   // from ahead, or from the right: the longest swing
+  lastDist = scanAt(90, SCAN_SETTLE_MS);
+  lastRight = scanAt(30, SCAN_SETTLE_MS);
+  myServo.write(90);                               // back to looking ahead, as the guard expects
+
+  Serial.print("LEFT:");
+  Serial.println(lastLeft);
+  Serial.print("DIST:");
+  Serial.println(lastDist);
+  Serial.print("RIGHT:");
+  Serial.println(lastRight);
+  Serial.print("SCAN:");
+  Serial.print(lastLeft);
+  Serial.print(",");
+  Serial.print(lastDist);
+  Serial.print(",");
+  Serial.println(lastRight);
+  delay(SCAN_SETTLE_MS);                           // settled ahead again before the guard pings
+}
+
 // =====================
 void checkSerial() {
   if (!Serial.available()) return;
@@ -687,6 +731,8 @@ void checkSerial() {
     Serial.println("I am Mila");   // the fleet-wide handshake
   } else if (cmd.startsWith("TALK:")) {
     talk(cmd.substring(5).toInt());
+  } else if (cmd == "SCAN") {
+    scanAround();
   } else if (cmd == "OBSTACLE") {
     driveMode = MODE_OBSTACLE;
     resetManualState();
