@@ -51,28 +51,71 @@ void fleetNearLoop() {
 }
 
 // === WIFI ===
-// On boot, try to join NORA's network as a station (so MILA and NORA can
-// share a LAN and MILA can register itself with NORA's fleet registry).
-// If NORA isn't reachable within the timeout, fall back to hosting our
-// own access point exactly like before.
-const char* nora_ssid     = "NORA";
-const char* nora_password = "12345678";
-const char* mila_ssid     = "MILA";
-const char* mila_password = "12345678";
-const unsigned long WIFI_JOIN_TIMEOUT_MS = 8000;
+// The fleet's ladder, the same rule for every robot (fleet TODO, section 2):
+//     RIFT > DREAM > NINA > TINA                                        (the hub, the virtual bots)
+//     > NORACTL > WHIPCTL > KIDA01CTL > KIDA00CTL > ARMCTL               (the PC controllers, in their bots' order)
+//     > NORA > WHIP > KIDA01 > KIDA00 > ARM > MILA                       (the real bots)
+// ARM, an ESP8266 like her, is above her: his controller is usually on with him.
+// MILA is at the bottom (an ESP8266 is too weak to host for the others): she joins the highest
+// network she can see (LADDER), and keeps scanning and moves up when a higher one appears
+// (motors stopped first); the network she's on gone for NET_LOST_MS: she climbs again from what
+// she can see. Only when she's alone does she host her own "MILA" AP (192.168.4.1), for direct
+// control. She registers every FLEET_HEARTBEAT_MS with whoever hosts: the network's gateway.
+// Names and passwords come from secrets.h (secrets.example.h shows the layout).
+#if __has_include("secrets.h")
+#include "secrets.h"
+#else
+#warning "No secrets.h: building with secrets.example.h's placeholders (copy it to secrets.h and fill it in)"
+#include "secrets.example.h"
+#endif
+const char* fleet_password = FLEET_PASSWORD;
+const char* nora_password = NORA_PASSWORD;
+const char* mila_ssid     = MILA_AP_SSID;
+const char* mila_password = MILA_AP_PASSWORD;
+const unsigned long WIFI_JOIN_TIMEOUT_MS = 20000;   // RIFT at boot (the router and hub start slower); WHIP waits 15 s
+const unsigned long WIFI_SWITCH_TIMEOUT_MS = 10000; // any other network on the ladder
+const unsigned long NET_LOST_MS = 60000;            // the network she's on gone this long: climb again
 
-const IPAddress fleetHost(192, 168, 4, 1);   // NORA's fixed AP gateway address
-const unsigned long FLEET_HEARTBEAT_MS = 15000;   // NORA drops entries after 20s of silence
+// The networks above MILA, highest first (everyone: she's the lowest). RIFT has its own password; every robot's own AP uses the
+// fleet's fallback password (NORA_PASSWORD, the same on every robot).
+const char* const LADDER[] = { FLEET_SSID, "DREAM", "NINA", "TINA", "NORACTL", "WHIPCTL", "KIDA01CTL", "KIDA00CTL", "ARMCTL", NORA_SSID, "WHIP", "KIDA01", "KIDA00", "ARM" };
+const int LADDER_N = sizeof(LADDER) / sizeof(LADDER[0]);
+int net = -1;                                       // the LADDER network she's on; -1 = hosting her own
+const uint8_t OWN_AP_CHANNEL = 1;                   // the ladder's hosts all use channel 1
+
+const IPAddress fleetHostDefault(192, 168, 4, 1);   // where the ladder's hosts are, if the network won't say
+
+// The fleet registry: whoever hosts the network she's on - its gateway (RIFT, NORA... all 192.168.4.1,
+// but a KIDA hosting with NetworkManager may not be).
+IPAddress fleetHost() {
+  IPAddress gw = WiFi.gatewayIP();
+  return (net >= 0 && gw.isSet()) ? gw : fleetHostDefault;
+}
+const unsigned long FLEET_HEARTBEAT_MS = 10000;   // the registry drops entries after 20 s of silence
+const char* const MY_CAPS = "wasd,tank,obstacle_avoidance,talk:5010";   // talk:<port>: RIFT can /chirp here
 
 // === RADAR (passive imposter spotter) ===
 // MILA listens to the WiFi around her and flags anything that isn't one of
 // our own networks as an "imposter". This is passive: she only scans and
 // reports. She never connects to or touches a network that isn't hers.
-const char* const FLEET_SSIDS[] = { "NORA", "MILA", "WHIP" };
+// A scan channel-hops, which drops packets on her link, so on RIFT's network
+// she only scans while someone has /radar open (like NORA's radar). Lower on
+// the ladder she scans now and then, to find a higher one; hosting her own AP
+// every RADAR_SCAN_MS, because that's how she finds the fleet.
+const char* const FLEET_SSIDS[] = { "RIFT", "DREAM", "NINA", "TINA", "NORACTL", "WHIPCTL", "KIDA01CTL", "KIDA00CTL", "ARMCTL", "NORA", "WHIP", "KIDA01", "KIDA00", "MILA", "ARM" };
 const unsigned long RADAR_SCAN_MS = 20000;   // rescan at most this often
+const unsigned long RADAR_CLIMB_MS = 60000;  // on a lower network: look for a higher one this often
+const unsigned long RADAR_WANTED_MS = 30000; // on RIFT's network: scan while /radar was asked for this recently
 String radarJson = "{\"scanning\":false,\"nets\":[]}";
 unsigned long lastRadarScan = 0;
+unsigned long radarWantedMs = 0;
 bool radarInFlight = false;
+bool higherSeen = false;                     // the last scan saw a network above the one she's on
+
+int ladderRank(const String& ssid) {          // its place in LADDER, or -1 if it isn't above MILA
+  for (int i = 0; i < LADDER_N; i++) if (ssid == LADDER[i]) return i;
+  return -1;
+}
 
 bool isFleetSsid(const String& s) {
   for (unsigned i = 0; i < sizeof(FLEET_SSIDS) / sizeof(FLEET_SSIDS[0]); i++) {
@@ -97,13 +140,19 @@ String jsonEscape(const String& in) {
 // device is remembered by IP; a new device must re-enter the PIN. Looking
 // (the page, /status, /radar, /scan while she's standing still) is always
 // allowed; driving is not.
-const char* const CONTROL_PIN = "1234";
+const char* const CONTROL_PIN = CONTROL_PIN_SECRET;   // secrets.h
 IPAddress controllerIP(0, 0, 0, 0);
 bool controllerUnlocked = false;
-bool fleetMode = false;   // true = joined NORA's network; false = running our own AP
+bool fleetMode = false;   // true = on RIFT's or NORA's network (a registry at 192.168.4.1); false = our own AP
 
 // === WEB SERVER ===
 ESP8266WebServer server(5010);
+// her fleet list on :5000 while she hosts her own AP (see HER FLEET LIST below)
+ESP8266WebServer fleetList(5000);
+const int FLEET_MAX = 8;
+const unsigned long FLEET_TTL_MS = 20000;          // like RIFT and NORA: gone after 20 s without a heartbeat
+struct FleetEntry { bool used; String name, type, caps; IPAddress ip; unsigned long seenMs; };
+FleetEntry fleetEntries[FLEET_MAX];
 
 // === STATE ===
 float  lastDist    = 0;
@@ -133,32 +182,79 @@ const unsigned long CONN_TIMEOUT_MS = 1500;
 unsigned long lastStatusPollMs = 0;
 
 // =====================
+// Join a network as a station. True if it worked within timeoutMs.
+bool joinNet(const char* ssid, const char* password, unsigned long timeoutMs) {
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);       // a short drop (a busy router, a scan) reconnects by itself
+  WiFi.begin(ssid, password);
+  unsigned long attemptStart = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - attemptStart < timeoutMs) {
+    delay(250);
+  }
+  return WiFi.status() == WL_CONNECTED;
+}
+
+// Host our own AP ("MILA", 192.168.4.1, channel 1) - the robots below her on the ladder join it.
+void startOwnAp() {
+  WiFi.disconnect();
+  IPAddress local_ip(192, 168, 4, 1);
+  IPAddress gateway(192, 168, 4, 1);
+  IPAddress subnet(255, 255, 255, 0);
+
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(local_ip, gateway, subnet);
+  WiFi.softAP(mila_ssid, mila_password, OWN_AP_CHANNEL);
+  delay(500);
+}
+
+// Climb the ladder: look around (a blocking scan, ~2 s), join the highest network above her
+// that lets her in, else host her own. Sets net and fleetMode.
+void climb(unsigned long riftMs) {
+  bool seen[LADDER_N] = { false };
+  WiFi.mode(WIFI_STA);
+  int n = WiFi.scanNetworks(false, false);
+  for (int i = 0; i < n; i++) {
+    int r = ladderRank(WiFi.SSID(i));
+    if (r >= 0) seen[r] = true;
+  }
+  WiFi.scanDelete();
+  net = -1;
+  for (int r = 0; r < LADDER_N && net < 0; r++) {
+    if (seen[r] && joinNet(LADDER[r], r == 0 ? fleet_password : nora_password,
+                           r == 0 ? riftMs : WIFI_SWITCH_TIMEOUT_MS)) net = r;
+  }
+  if (net < 0) startOwnAp();
+  fleetMode = net >= 0;
+  higherSeen = false;
+}
+
+// Called every loop: climb when a scan has seen a network above the one she's on (or above her,
+// while she hosts), and when the one she's on has been gone for NET_LOST_MS.
+void wifiWatch() {
+  static unsigned long lostSince = 0;
+  bool lost = false;
+  if (!higherSeen && net >= 0) {                  // on a ladder network: still there?
+    if (WiFi.status() == WL_CONNECTED) { lostSince = 0; return; }
+    if (lostSince == 0) { lostSince = millis(); return; }
+    if (millis() - lostSince < NET_LOST_MS) return;
+    lost = true;
+  }
+  if (!higherSeen && !lost) return;
+  lostSince = 0;
+  Serial.println("STOP");                          // nobody can reach her during the switch: stand still
+  lastCommand = "STOP";
+  climb(WIFI_SWITCH_TIMEOUT_MS);
+  MDNS.notifyAPChange();
+  if (fleetMode) fleetRegister();
+}
+
+// =====================
 void setup() {
   Serial.begin(115200);
   delay(100);
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(nora_ssid, nora_password);
-
-  unsigned long attemptStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - attemptStart < WIFI_JOIN_TIMEOUT_MS) {
-    delay(250);
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    fleetMode = true;
-  } else {
-    WiFi.disconnect();
-    IPAddress local_ip(192, 168, 4, 1);
-    IPAddress gateway(192, 168, 4, 1);
-    IPAddress subnet(255, 255, 255, 0);
-
-    WiFi.mode(WIFI_AP);
-    WiFi.softAPConfig(local_ip, gateway, subnet);
-    WiFi.softAP(mila_ssid, mila_password);
-    delay(500);
-    fleetMode = false;
-  }
+  climb(WIFI_JOIN_TIMEOUT_MS);
 
   // Routes
   server.on("/",       handleRoot);
@@ -172,6 +268,7 @@ void setup() {
   server.on("/chirp",  handleChirp);
 
   server.begin();
+  setupFleetList();                 // :5000, for the robots below her when she hosts
 
   if (fleetMode) fleetRegister();
   fleetNearBegin();
@@ -191,7 +288,9 @@ void setup() {
 void loop() {
   fleetNearLoop();
   radarLoop();
+  wifiWatch();
   server.handleClient();
+  fleetList.handleClient();
   ArduinoOTA.handle();
   MDNS.update();
 
@@ -256,12 +355,12 @@ void readArduinoLine() {
 // heartbeat interval.
 void fleetRegister() {
   WiFiClient client;
-  if (!client.connect(fleetHost, 5000)) return;
+  if (!client.connect(fleetHost(), 5000)) return;
 
   // talk:<port> = RIFT's conversations can /chirp here
-  String body = "name=MILA&type=tank&capabilities=wasd,tank,obstacle_avoidance,talk:5010";
+  String body = String("name=MILA&type=tank&capabilities=") + MY_CAPS;
   client.print(String("POST /register HTTP/1.1\r\n") +
-               "Host: " + fleetHost.toString() + "\r\n" +
+               "Host: " + fleetHost().toString() + "\r\n" +
                "Content-Type: application/x-www-form-urlencoded\r\n" +
                "Content-Length: " + body.length() + "\r\n" +
                "Connection: close\r\n\r\n" +
@@ -293,7 +392,10 @@ String currentIP() {
 // RADAR_SCAN_MS, then pick up the result on a later loop and cache it as
 // JSON. Each network is tagged friend/imposter; we never touch imposters.
 void radarLoop() {
-  if (!radarInFlight && millis() - lastRadarScan >= RADAR_SCAN_MS) {
+  bool looked = radarWantedMs != 0 && millis() - radarWantedMs < RADAR_WANTED_MS;   // /radar is open
+  bool wanted = net != 0 || looked;                 // on RIFT (the top) only for the page
+  unsigned long gap = (net > 0 && !looked) ? RADAR_CLIMB_MS : RADAR_SCAN_MS;
+  if (!radarInFlight && wanted && (lastRadarScan == 0 || millis() - lastRadarScan >= gap)) {
     // async = true (non-blocking), show_hidden = true
     WiFi.scanNetworks(true, true);
     radarInFlight = true;
@@ -315,6 +417,8 @@ void radarLoop() {
       String shown = ssid.length() ? jsonEscape(ssid) : "(hidden)";
       bool fleet = ssid.length() && isFleetSsid(ssid);
       if (!fleet) imposters++;
+      int rank = ladderRank(ssid);
+      if (rank >= 0 && (net < 0 || rank < net)) higherSeen = true;   // wifiWatch() climbs to it
       if (i) j += ",";
       j += "{\"ssid\":\"" + shown + "\",";
       j += "\"rssi\":" + String(WiFi.RSSI(i)) + ",";
@@ -328,6 +432,7 @@ void radarLoop() {
 }
 
 void handleRadar() {
+  radarWantedMs = millis();              // someone's looking: keep scanning for a while
   server.send(200, "application/json", radarJson);
 }
 
@@ -350,20 +455,76 @@ void handleUnlock() {
 // Proxies NORA's fleet roster (GET /robots on port 5000) so MILA's own
 // dashboard can show her and any siblings without the browser needing to
 // reach NORA directly.
+// === HER FLEET LIST (:5000) ===
+// While MILA hosts her own AP (she's alone) she's 192.168.4.1, and anything that joins her for
+// direct control can register there: /ping, /register and /robots, the same wire format as NORA's
+// fleetServer and RIFT's registry. Tiny, so it stays even though she's the lowest on the ladder.
+
+String capsJson(const String& caps) {
+  String j = "[";
+  int from = 0;
+  bool first = true;
+  while (from < (int)caps.length()) {
+    int comma = caps.indexOf(',', from);
+    if (comma < 0) comma = caps.length();
+    String c = caps.substring(from, comma);
+    c.trim();
+    if (c.length()) { j += (first ? "\"" : ",\"") + jsonEscape(c) + "\""; first = false; }
+    from = comma + 1;
+  }
+  return j + "]";
+}
+
+String fleetListJson() {
+  String j = "{\"authority\":\"MILA\",\"robots\":[{\"name\":\"MILA\",\"type\":\"tank\",\"ip\":\"" +
+             currentIP() + "\",\"capabilities\":" + capsJson(MY_CAPS) + "}";
+  unsigned long now = millis();
+  for (int i = 0; i < FLEET_MAX; i++) {
+    FleetEntry& e = fleetEntries[i];
+    if (!e.used) continue;
+    if (now - e.seenMs > FLEET_TTL_MS) { e.used = false; continue; }
+    j += ",{\"name\":\"" + jsonEscape(e.name) + "\",\"type\":\"" + jsonEscape(e.type) + "\",\"ip\":\"" +
+         e.ip.toString() + "\",\"capabilities\":" + capsJson(e.caps) + "}";
+  }
+  return j + "]}";
+}
+
+void setupFleetList() {
+  fleetList.on("/ping", []() { fleetList.send(200, "text/plain", "MILA alive"); });
+  fleetList.on("/register", HTTP_POST, []() {
+    String name = fleetList.arg("name");
+    if (name.length() == 0) { fleetList.send(400, "text/plain", "missing 'name'"); return; }
+    int slot = -1;
+    for (int i = 0; i < FLEET_MAX; i++) if (fleetEntries[i].used && fleetEntries[i].name == name) slot = i;
+    for (int i = 0; i < FLEET_MAX && slot < 0; i++) if (!fleetEntries[i].used) slot = i;
+    if (slot < 0) { fleetList.send(503, "text/plain", "fleet list full"); return; }
+    FleetEntry& e = fleetEntries[slot];
+    e.used = true;
+    e.name = name;
+    e.type = fleetList.hasArg("type") ? fleetList.arg("type") : "unknown";
+    e.caps = fleetList.arg("capabilities");
+    e.ip = fleetList.client().remoteIP();
+    e.seenMs = millis();
+    fleetList.send(200, "text/plain", "OK");
+  });
+  fleetList.on("/robots", HTTP_GET, []() { fleetList.send(200, "application/json", fleetListJson()); });
+  fleetList.begin();
+}
+
 void handleFleet() {
-  if (!fleetMode) {
-    server.send(200, "application/json", "{\"authority\":\"none\",\"robots\":[]}");
+  if (!fleetMode) {                                  // she hosts: her own list
+    server.send(200, "application/json", fleetListJson());
     return;
   }
 
   WiFiClient client;
-  if (!client.connect(fleetHost, 5000)) {
+  if (!client.connect(fleetHost(), 5000)) {
     server.send(200, "application/json", "{\"authority\":\"unreachable\",\"robots\":[]}");
     return;
   }
 
   client.print(String("GET /robots HTTP/1.1\r\n") +
-               "Host: " + fleetHost.toString() + "\r\n" +
+               "Host: " + fleetHost().toString() + "\r\n" +
                "Connection: close\r\n\r\n");
 
   unsigned long start = millis();

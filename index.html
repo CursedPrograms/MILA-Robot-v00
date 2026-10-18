@@ -97,7 +97,7 @@
       <div class="card">
         <span class="k">Connect</span>
         <h4>WiFi dashboard</h4>
-        <p>The ESP8266 serves a web dashboard on port <code>5010</code>. Join MILA's access point, or her fleet on NORA's network.</p>
+        <p>The ESP8266 serves a web dashboard on port <code>5010</code>. She joins the fleet's RIFT network, else NORA's, else hosts her own access point &mdash; and keeps looking for a better one.</p>
       </div>
       <div class="card">
         <span class="k">Stay safe</span>
@@ -169,7 +169,7 @@
   <div class="wrap">
     <h2>Quick start</h2>
     <h3 class="title">Get driving in a few minutes</h3>
-    <p class="muted">Flash the firmware from <code>scripts/esp8266</code> and <code>scripts/MILA</code> using the <a href="https://docs.arduino.cc/software/ide/">Arduino IDE</a>, then power the robot on and join her WiFi network. MILA hosts her own access point at <code>192.168.4.1</code>.</p>
+    <p class="muted">Flash the firmware from <code>scripts/esp8266</code> and <code>scripts/MILA</code> using the <a href="https://docs.arduino.cc/software/ide/">Arduino IDE</a> (first copy <code>scripts/esp8266/secrets.example.h</code> to <code>secrets.h</code> and fill in the WiFi passwords and her PIN), then power the robot on. With no fleet network around, MILA hosts her own access point at <code>192.168.4.1</code>.</p>
     <p>Open the dashboard in any browser, or use a desktop controller:</p>
 <pre><span class="c"># Python controller: creates a venv, installs deps, launches it</span>
 <span class="p">$</span> ./run.sh                 <span class="c"># macOS / Linux / Git Bash</span>
@@ -178,7 +178,7 @@
 
 <span class="c"># Point at a specific robot, or let it find her for you</span>
 <span class="p">$</span> ./run.sh --host 192.168.4.1 --port 5010</pre>
-    <p class="muted">If MILA joined NORA's network (fleet mode), she won't be at <code>192.168.4.1</code>. Press <strong>SCAN NETWORK</strong> in the C++, C# or F# controller, or start it with <code>--host auto</code>.</p>
+    <p class="muted">If MILA joined the RIFT or NORA network (fleet mode), she won't be at <code>192.168.4.1</code>: RIFT's dashboard lists her address. Press <strong>SCAN NETWORK</strong> in the C++, C# or F# controller, or start it with <code>--host auto</code>.</p>
   </div>
 </section>
 
