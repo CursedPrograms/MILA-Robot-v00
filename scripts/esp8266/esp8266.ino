@@ -3,6 +3,7 @@
 #include <ESP8266mDNS.h>
 #include <ArduinoOTA.h>
 #include <espnow.h>
+#include "keys_page.h"   // /keys: every key and button (generated from scripts/keymap.py)
 
 // === FLEET PROXIMITY (ESP-NOW) ===
 // MILA broadcasts the fleet's "I'm here" beacon (same packet as NORA's and
@@ -257,6 +258,7 @@ void setup() {
   climb(WIFI_JOIN_TIMEOUT_MS);
 
   // Routes
+  server.on("/keys",   []() { server.send_P(200, "text/html", KEYS_HTML); });
   server.on("/",       handleRoot);
   server.on("/cmd",    handleCmd);
   server.on("/mode",   handleMode);
@@ -744,6 +746,7 @@ void handleRoot() {
     font-size: 0.7rem; letter-spacing: 2px;
     cursor: pointer; transition: all 0.2s;
   }
+  .keys-link { display: inline-block; text-decoration: none; margin-top: 6px; }
   .mode-btn.active {
     border-color: var(--accent); color: var(--accent);
     box-shadow: 0 0 10px rgba(0,212,255,0.15);
@@ -876,6 +879,7 @@ void handleRoot() {
   <div class="logo-text">
     <h1>M I L A</h1>
     <p>MINIATURE INTEGRATED LOGIC AUTOMATON</p>
+    <a class="mode-btn keys-link" href="/keys" target="mila_keys">KEYS</a>
   </div>
   <div class="conn-dot" id="connDot"></div>
 </header>

@@ -59,7 +59,12 @@ const int NUM_SPEED_PRESETS = 4;
 int speedIndex = 0;
 int speedPct = 100;
 
+// NORA's LOCK over the fleet link (LINK_LOCK): the wheels stay still, whatever drives them
+// (remote, link, obstacle mode), until her UNLOCK (LINK_UNLOCK). Unlocked at boot.
+bool linkLocked = false;
+
 int pwmSpeed() {
+  if (linkLocked) return 0;   // every motor function goes through here
   return (255 * speedPct) / 100;
 }
 
@@ -129,6 +134,8 @@ unsigned long holdMs = IR_HOLD_MS;  // release timeout for the current drive (re
 #define LINK_OBSTACLE  0x4D
 #define LINK_MANUAL    0x4E   // WASD mode
 #define LINK_SPEED     0x4F   // cycle speed (the OK button)
+#define LINK_UNLOCK    0x50   // NORA frees the wheels
+#define LINK_LOCK      0x51   // NORA locks them: stop, and no driving until LINK_UNLOCK
 const unsigned long LINK_HOLD_MS = 500;
 
 // Tank mode is button-toggled, not held: an IR receiver only ever decodes
@@ -487,6 +494,8 @@ void runLinkCommand(uint8_t c, bool isRepeat) {
     case LINK_OBSTACLE: if (!isRepeat) runIRCommand(IR_MODE_OBSTACLE); return;
     case LINK_MANUAL:   if (!isRepeat) runIRCommand(IR_MODE_WASD);     return;
     case LINK_SPEED:    if (!isRepeat) runIRCommand(IR_OK);            return;
+    case LINK_UNLOCK:   linkLocked = false;                            return;
+    case LINK_LOCK:     linkLocked = true; runIRCommand(IR_MODE_WASD); return;   // stop, out of obstacle mode
     default: return;
   }
   if (driveMode != MODE_WASD) runIRCommand(IR_MODE_WASD);

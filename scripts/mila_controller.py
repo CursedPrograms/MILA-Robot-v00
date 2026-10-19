@@ -19,6 +19,8 @@ CONTROLS
   WASD mode:    Arrow keys or WASD to drive, Space to stop
   TANK mode:    Q/A = left track fwd/back, E/D = right track fwd/back
   Esc           quit
+  F1            every key, gamepad button and remote button (scripts/keymap.py)
+  Gamepad       stick / D-pad drive (WASD mode), A stops, B/X/Y obstacle/WASD/TANK, Start speed +
   Everything is also clickable with the mouse.
 """
 
@@ -29,6 +31,9 @@ import time
 
 import pygame
 import requests
+
+import keymap as keys_window         # scripts/keymap.py: every key and button, in its own window (F1)
+from gamepad_drive import PadDrive  # any gamepad, or ARM's flight stick
 
 # ----------------------------------------------------------------------------
 # Transport
@@ -234,15 +239,23 @@ def main():
         pygame.K_e: "R_FWD", pygame.K_d: "R_BWD",
     }
 
+    pad = PadDrive()          # a gamepad / joystick, plugged in any time
+    pad_drive = None          # the drive the pad is holding
+    PAD_DRIVE = {"fw": "FORWARD", "bw": "BACKWARD", "left": "LEFT", "right": "RIGHT",
+                 "turnL": "LEFT", "turnR": "RIGHT"}
+
     running = True
     while running:
         for ev in pygame.event.get():
+            pad.handle(ev)
             if ev.type == pygame.QUIT:
                 running = False
 
             elif ev.type == pygame.KEYDOWN:
                 if ev.key == pygame.K_ESCAPE:
                     running = False
+                elif ev.key == pygame.K_F1:
+                    keys_window.open_window()
                 elif ev.key == pygame.K_1:
                     set_mode("wasd")
                 elif ev.key == pygame.K_2:
@@ -272,6 +285,21 @@ def main():
                     b.pressed = False
                 if active_drive:
                     stop_drive()
+
+        # gamepad: the stick / D-pad drives in WASD mode, buttons do the rest
+        d = PAD_DRIVE.get(pad.direction()) if mode == "wasd" else None
+        if d != pad_drive:
+            if d:
+                start_drive(d)
+            elif active_drive == pad_drive:
+                stop_drive()
+            pad_drive = d
+        for b in pad.presses():
+            if b == 0: stop_drive(); link.cmd("STOP")
+            elif b == 1: set_mode("obstacle")
+            elif b == 2: set_mode("wasd")
+            elif b == 3: set_mode("tank")
+            elif b == 7: adjust_speed(25)
 
         # ---- draw ----
         screen.fill(BG)
