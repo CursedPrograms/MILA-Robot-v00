@@ -6,15 +6,37 @@ Plug it in or pull it out at any time (hot-plug). The same file in the controlle
     ...in the event loop:   pad.handle(ev)
     ...every frame:         pad.direction()  -> "fw" / "bw" / "left" / "right" / "turnL" / "turnR" / None
                             pad.presses()    -> buttons pressed since the last frame, e.g. {0, 3}
+                            pad.rumble(*rumble_level(cm_ahead))   -> buzz as a wall gets close
 
 Drive: the left stick, the D-pad (hat) or a flight stick. Turn: LB / RB (buttons 4 / 5), the right
 stick across, or a flight stick's twist. An axis that rests far from the middle when the pad is
 plugged in (a trigger, a throttle) is never read as steering.
+
+Rumble (KIDA-01's haptics.py, for every pad): while you drive, the light motor buzzes from WARN_CM
+on, harder the closer the wall in the way, full at STOP_CM; a tipping robot shakes both motors full.
 """
+import time
+
 import pygame
 
 DEAD = 0.4          # stick travel that counts as pushed
 TURN_AXES = (2, 3)  # the right stick across (Windows: 2, Linux: 3) or a flight stick's twist (2)
+WARN_CM = 40        # rumble starts this close to a wall (KIDA-01's sensor_assist WARN_DIST_CM)
+STOP_CM = 15        # ...and is full here (the robots stop by themselves about now)
+
+
+def rumble_level(cm_ahead, tipping=False):
+    """(low, high) motor strengths 0..1 for the distance to the wall in the way (None / "--" /
+    no reading: nothing in the way), or tipping."""
+    if tipping:
+        return 1.0, 1.0
+    try:
+        cm = float(cm_ahead)
+    except (TypeError, ValueError):
+        return 0.0, 0.0
+    if cm <= 0 or cm >= WARN_CM:
+        return 0.0, 0.0
+    return 0.0, min(1.0, (WARN_CM - cm) / (WARN_CM - STOP_CM))
 
 
 class PadDrive:
@@ -23,6 +45,7 @@ class PadDrive:
         self.js = None
         self.rest = []
         self._held = set()
+        self._rumble, self._rumble_at = (0.0, 0.0), 0.0
         if pygame.joystick.get_count():
             self._open(0)
 
@@ -80,6 +103,24 @@ class PadDrive:
         if turn:
             return "turnL" if turn < 0 else "turnR"
         return None
+
+    def rumble(self, low, high):
+        """Keep the pad rumbling at (low, high), 0..1. Call it every frame: it renews itself, and
+        (0, 0) stops it. Pads without rumble motors ignore it."""
+        if not self.js:
+            return
+        now = time.monotonic()
+        level = (round(low, 2), round(high, 2))
+        if level == self._rumble and (not any(level) or now - self._rumble_at < 0.3):
+            return
+        self._rumble, self._rumble_at = level, now
+        try:
+            if any(level):
+                self.js.rumble(level[0], level[1], 500)
+            else:
+                self.js.stop_rumble()
+        except (pygame.error, AttributeError):
+            pass
 
     def presses(self):
         """Buttons that went down since the last call (not 4 / 5: those turn)."""

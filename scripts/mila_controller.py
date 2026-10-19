@@ -33,7 +33,7 @@ import pygame
 import requests
 
 import keymap as keys_window         # scripts/keymap.py: every key and button, in its own window (F1)
-from gamepad_drive import PadDrive  # any gamepad, or ARM's flight stick
+from gamepad_drive import PadDrive, rumble_level  # any gamepad, or ARM's flight stick
 
 # ----------------------------------------------------------------------------
 # Transport
@@ -304,6 +304,8 @@ def main():
         # ---- draw ----
         screen.fill(BG)
         t = link.telemetry()
+        # the pad buzzes as she nears a wall while it drives her forward (gamepad_drive.rumble_level)
+        pad.rumble(*rumble_level(t.get("dist") if pad_drive == "FORWARD" else None))
         if "speed" in t:
             try:
                 speed_state["pct"] = int(float(t["speed"]))

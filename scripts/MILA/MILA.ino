@@ -180,6 +180,21 @@ void beep(unsigned int freq, unsigned int durMs) {
   playTone(freq, durMs);
 }
 
+// Getting close while driving forward: a short tick, faster the nearer the wall, like NORA's
+// proximity tone and a car's parking sensor. Ticks (not one long tone) because the buzzer shares
+// Timer2 with the IR receiver: beep() pauses it for 15 ms each time. From PROX_TICK_CM before
+// `stopCm` (where she stops by herself) down to it; silent further away.
+const long PROX_TICK_CM = 25;
+void proximityTick(long d, long stopCm) {
+  static unsigned long lastTick = 0;
+  if (d <= 0 || d >= stopCm + PROX_TICK_CM) return;
+  long near = constrain(d, stopCm, stopCm + PROX_TICK_CM);
+  unsigned long gap = map(near, stopCm, stopCm + PROX_TICK_CM, 80, 600);
+  if (millis() - lastTick < gap) return;
+  lastTick = millis();
+  beep(1400, 15);
+}
+
 void setBuzzerSilent(bool silent) {
   buzzerSilent = silent;
   Serial.print("BUZZER:");
@@ -310,6 +325,7 @@ void loop() {
   }
 
   if (d > (angle == 90 ? stopDist : diagStopDist)) {
+    if (angle == 90) proximityTick(d, stopDist);
     forward();
     robotState = MOVING_FORWARD;
     updateLighting();
@@ -539,6 +555,7 @@ void checkManualGuard() {
   lastDist = getDistance();
   Serial.print("DIST:");
   Serial.println(lastDist);
+  if (intentForward) proximityTick(lastDist, guardDist);
 
   if (intentForward && lastDist > 0 && lastDist < guardDist) {
     stopMotors();
@@ -832,7 +849,10 @@ void updateLighting() {
   unsigned long now = millis();
 
   if (robotState == MOVING_FORWARD) {
-    setColor(0, 0, 255);
+    // In the dark (the light sensor, lastLight 0) she lights her way: white instead of blue,
+    // like KIDA-01's front lights
+    if (lastLight == 0) setColor(255, 255, 255);
+    else setColor(0, 0, 255);
 
   } else if (robotState == TURNING) {
     if (now - lastStrobeTime >= 100) {
