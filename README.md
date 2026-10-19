@@ -133,7 +133,14 @@ In the running setting the Arduino's serial goes to the ESP, not USB, so the Ser
 
 ### Flash and connect
 
-The ESP8266's WiFi passwords and her control PIN are in `scripts/esp8266/secrets.h` (the fleet's: RIFT and NORA `mmvbkbak`, PIN `1234`; `secrets.example.h` shows the layout). Flash the firmware from `scripts/esp8266` and `scripts/MILA` with the Arduino IDE (set the DIP switches above first), power the robot on, and join her WiFi network. Then open the dashboard in a browser, or run a desktop controller:
+The ESP8266's WiFi passwords and her control PIN are in `scripts/esp8266/secrets.h` (the fleet's: RIFT and NORA `mmvbkbak`, PIN `1234`; `secrets.example.h` shows the layout). Flash the firmware from `scripts/esp8266` and `scripts/MILA` with the Arduino IDE (set the DIP switches above first):
+
+| Sketch | Board (Tools > Board) | Needs |
+| :--- | :--- | :--- |
+| `scripts/MILA` | Arduino UNO | Libraries: **IRremote** (4.x), **Servo** |
+| `scripts/esp8266` | Generic ESP8266 Module (Flash Size 4MB, FS 2MB OTA) | The **esp8266** boards: add `https://arduino.esp8266.com/stable/package_esp8266com_index.json` under File > Preferences > Additional boards manager URLs, then install *esp8266* in the Boards Manager |
+
+Then power the robot on, and join her WiFi network. Then open the dashboard in a browser, or run a desktop controller:
 
 ```
 ./run.sh                      # macOS / Linux / Git Bash
