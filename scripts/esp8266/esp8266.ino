@@ -103,7 +103,7 @@ const char* const MY_CAPS = "wasd,tank,obstacle_avoidance,talk:5010";   // talk:
 // she only scans while someone has /radar open (like NORA's radar). Lower on
 // the ladder she scans now and then, to find a higher one; hosting her own AP
 // every RADAR_SCAN_MS, because that's how she finds the fleet.
-const char* const FLEET_SSIDS[] = { "RIFT", "DREAM", "NINA", "TINA", "NORACTL", "WHIPCTL", "KIDA01CTL", "KIDA00CTL", "ARMCTL", "NORA", "WHIP", "KIDA01", "KIDA00", "MILA", "ARM" };
+const char* const FLEET_SSIDS[] = { "RIFT", "DREAM", "NINA", "TINA", "NORACTL", "WHIPCTL", "KIDA01CTL", "KIDA00CTL", "ARMCTL", "NORA", "WHIP", "KIDA01", "KIDA00", "MILA", "ARM", "NIKA" };
 const unsigned long RADAR_SCAN_MS = 20000;   // rescan at most this often
 const unsigned long RADAR_CLIMB_MS = 60000;  // on a lower network: look for a higher one this often
 const unsigned long RADAR_WANTED_MS = 30000; // on RIFT's network: scan while /radar was asked for this recently
