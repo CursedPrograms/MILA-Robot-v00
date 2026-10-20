@@ -74,7 +74,12 @@ MILA is a small tank-chassis robot you can drive over WiFi. It hosts its own web
 - **Live telemetry:** front, left and right distance, temperature, humidity and the last IR remote key.
 - **WiFi dashboard:** served by the ESP8266 on port `5010`. She joins the fleet's "RIFT" network first, NORA's "NORA" network if there's no RIFT, and hosts her own "MILA" access point at `192.168.4.1` if neither is around - and keeps looking, so she moves to RIFT (or NORA) as soon as it appears.
 - **Safety:** a collision guard force-stops the robot in manual modes, and a watchdog stops it if the connection drops.
-- **Speed:** cycle 100 / 75 / 50 / 25 % from the IR remote, or set an exact value from the dashboard slider.
+- **Speed:** cycle 100 / 75 / 50 / 25 % from the IR remote, or set an exact value from the dashboard slider (see the pinout warning below).
+- **MIND mode:** the LLM on her PC controller drives her, one short move at a time: she looks (her distances, or a SCAN left / ahead / right), thinks out loud on screen, says what she's doing in her own voice (playful and quick), moves, and remembers. **M** on the Python controller, or MIND on her dashboard while it's connected. Only on an x86 PC with 8 GB+ RAM and a GTX 1050 or better.
+- **Ticks near walls:** driving forward, the buzzer ticks faster as a wall gets close, like a parking sensor (ticks, not a tone: the buzzer shares a timer with the IR receiver).
+- **Lights in the dark:** driving forward in the dark (the light sensor), her LED goes white instead of blue to light the way.
+- **Gamepad rumble:** the pad buzzes harder as she nears a wall while you drive her forward.
+- **The Python controller unlocks her with her PIN** when it connects (it didn't before, so every drive command came back LOCKED).
 
 ---
 

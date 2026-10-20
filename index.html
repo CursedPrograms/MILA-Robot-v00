@@ -114,6 +114,21 @@
         <h4>Desktop controllers</h4>
         <p>Native controllers in seven languages, with radar, live graphs, gamepad support and one-click network discovery.</p>
       </div>
+      <div class="card">
+        <span class="k">Think</span>
+        <h4>MIND mode</h4>
+        <p>The LLM on her PC controller drives her: she looks (or scans left, ahead and right), thinks out loud, says what she&rsquo;s doing and moves. <b>M</b> on the controller.</p>
+      </div>
+      <div class="card">
+        <span class="k">Warn</span>
+        <h4>Ticks and lights</h4>
+        <p>The buzzer ticks faster as a wall gets close; in the dark her LED turns white to light the way.</p>
+      </div>
+      <div class="card">
+        <span class="k">Feel</span>
+        <h4>Gamepad rumble</h4>
+        <p>The pad buzzes harder as she nears a wall while you drive her forward.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -123,17 +138,33 @@
     <h2>Hardware</h2>
     <h3 class="title">What it's built from</h3>
     <ol class="parts">
-      <li><span class="n">01</span> Small tank robot chassis</li>
-      <li><span class="n">02</span> Arduino Bluetooth (integrated ESP8266)</li>
+      <li><span class="n">01</span> Small metal tank robot chassis</li>
+      <li><span class="n">02</span> UNO + WiFi R3 style board (ATmega328P + integrated ESP8266)</li>
       <li><span class="n">03</span> 2S 18650 battery pack</li>
       <li><span class="n">04</span> L298N motor driver</li>
       <li><span class="n">05</span> MG95 servo</li>
-      <li><span class="n">06</span> Ultrasonic sensor</li>
-      <li><span class="n">07</span> 5&nbsp;V DC motors</li>
+      <li><span class="n">06</span> HC-SR04 ultrasonic sensor</li>
+      <li><span class="n">07</span> 2&times; 5&nbsp;V DC motors</li>
       <li><span class="n">08</span> RGB LED</li>
-      <li><span class="n">09</span> Temperature &amp; humidity sensor</li>
-      <li><span class="n">10</span> IR receiver</li>
+      <li><span class="n">09</span> AHT10 temperature &amp; humidity sensor (I2C)</li>
+      <li><span class="n">10</span> Photoresistor module (digital out)</li>
+      <li><span class="n">11</span> Buzzer</li>
+      <li><span class="n">12</span> NEC IR receiver + remote</li>
     </ol>
+    <h3 class="sub">Pinout (<code>scripts/MILA/MILA.ino</code>)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Signal</th><th>Pin</th><th>Signal</th><th>Pin</th></tr></thead>
+        <tbody>
+          <tr><td>Ultrasonic TRIG / ECHO</td><td class="mono">2 / 3</td><td>Servo</td><td class="mono">11</td></tr>
+          <tr><td>Right motor IN1 / IN2 / ENA</td><td class="mono">4 / 5 / 9</td><td>Buzzer</td><td class="mono">8</td></tr>
+          <tr><td>Left motor IN3 / IN4 / ENB</td><td class="mono">6 / 7 / 10</td><td>Light sensor (DO)</td><td class="mono">12</td></tr>
+          <tr><td>RGB LED R / G / B</td><td class="mono">A0 / A1 / A2</td><td>IR receiver</td><td class="mono">A3</td></tr>
+          <tr><td>AHT10 SDA / SCL</td><td class="mono">A4 / A5</td><td>ESP8266 link</td><td class="mono">Serial (DIP 1 + 2)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><strong>Speed control and the servo share a timer.</strong> ENA and ENB on pins 9 and 10 lose their PWM to the Servo library, so 75 / 50 / 25&nbsp;% may barely move her. Swap <strong>ENA &harr; IN2</strong> (ENA &rarr; 5, IN2 &rarr; 9) and <strong>ENB &harr; IN3</strong> (ENB &rarr; 6, IN3 &rarr; 10), and the same four numbers in <code>MILA.ino</code>.</p>
   </div>
 </section>
 
@@ -156,6 +187,11 @@
         <span class="k">3 &middot; Obstacle</span>
         <h4>Autonomous</h4>
         <p>MILA drives on her own, scanning with the servo-mounted sensor and turning away from whatever is in the way.</p>
+      </div>
+      <div class="card mode">
+        <span class="k">M &middot; Mind</span>
+        <h4>Her own mind</h4>
+        <p>The LLM on her PC controller drives her, one short move at a time. MIND on her dashboard shows only while that controller is connected.</p>
       </div>
     </div>
     <h3 class="sub">Driven by NORA</h3>
