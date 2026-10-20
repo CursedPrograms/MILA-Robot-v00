@@ -46,7 +46,7 @@ void fleetNearLoop() {
   strncpy(b.name, "MILA", sizeof(b.name) - 1);
   b.seq = fleetSeq++;
   // driving herself (obstacle mode), driven by you, or standing still
-  const char* say = currentMode == "obstacle" ? FLEET_BF_GO : lastCommand != "STOP" ? FLEET_BF_HAND : FLEET_BF_PARK;
+  const char* say = (currentMode == "obstacle" || currentMode == "mind") ? FLEET_BF_GO : lastCommand != "STOP" ? FLEET_BF_HAND : FLEET_BF_PARK;
   strncpy(b.bf, say, sizeof(b.bf) - 1);
   esp_now_send(fleetBroadcast, (uint8_t*)&b, sizeof(b));
 }
@@ -144,6 +144,23 @@ String jsonEscape(const String& in) {
 const char* const CONTROL_PIN = CONTROL_PIN_SECRET;   // secrets.h
 IPAddress controllerIP(0, 0, 0, 0);
 bool controllerUnlocked = false;
+
+// === MIND MODE (fleet TODO, section 10) ===
+// Her PC controller's LLM (mind.py) drives her one short move at a time. The mind host - a controller
+// that can run it (mind.can_think()) - unlocks with /unlock?pw=&ctl=1 and checks in on /status?ctl=1;
+// MIND mode only starts while it does, and ends (she stops, back to WASD) 5 s after it goes quiet.
+// /mind?act=fwd|bwd|left|right|stop&steps=1-4: MIND_STEP_MS of driving per step, then STOP. A forward
+// move is refused with a wall within MIND_WALL_CM, and the UNO's own guard still stops her mid-move.
+IPAddress mindHostIP(0, 0, 0, 0);
+unsigned long mindHostSeen = 0;
+const unsigned long MIND_HOST_TTL_MS = 5000;
+const unsigned long MIND_STEP_MS = 400;
+const int MIND_MAX_STEPS = 4;
+const float MIND_WALL_CM = 20;
+unsigned long mindMoveUntil = 0;     // the current /mind move ends here (0 = none)
+bool mindBlocked = false;            // the last forward move stopped at a wall
+
+bool mindHostAlive() { return mindHostSeen && millis() - mindHostSeen < MIND_HOST_TTL_MS; }
 bool fleetMode = false;   // true = on RIFT's or NORA's network (a registry at 192.168.4.1); false = our own AP
 
 // === WEB SERVER ===
@@ -267,6 +284,7 @@ void setup() {
   server.on("/radar",  handleRadar);
   server.on("/unlock", handleUnlock);
   server.on("/scan",   handleScan);
+  server.on("/mind",   handleMind);
   server.on("/chirp",  handleChirp);
 
   server.begin();
@@ -314,6 +332,22 @@ void loop() {
 
   // Read sensor data from Arduino
   while (Serial.available()) readArduinoLine();
+
+  // MIND: end the move after its steps (or at a wall: the UNO's guard), and the mode when her mind's
+  // controller goes quiet
+  if (mindMoveUntil && ((long)(millis() - mindMoveUntil) >= 0 || lastGuard)) {
+    if (lastGuard) mindBlocked = true;
+    mindMoveUntil = 0;
+    lastCommand = "STOP";
+    Serial.println("STOP");
+  }
+  if (currentMode == "mind" && !mindHostAlive()) {
+    currentMode = "wasd";
+    mindMoveUntil = 0;
+    lastCommand = "STOP";
+    Serial.println("STOP");
+    Serial.println("WASD");
+  }
 }
 
 // One line from the Arduino. Also called while /scan waits for its answer.
@@ -446,6 +480,7 @@ void handleUnlock() {
   if (server.hasArg("pw") && server.arg("pw") == CONTROL_PIN) {
     controllerIP = server.client().remoteIP();
     controllerUnlocked = true;
+    if (server.arg("ctl") == "1") { mindHostIP = controllerIP; mindHostSeen = millis(); }   // her mind's controller
     server.send(200, "application/json",
                 "{\"ok\":true,\"controller\":\"" + controllerIP.toString() + "\"}");
   } else {
@@ -563,8 +598,8 @@ void handleCmd() {
       return;
     }
   }
-  if (currentMode == "obstacle") {
-    server.send(200, "text/plain", "IGNORED");
+  if (currentMode == "obstacle" || (currentMode == "mind" && server.arg("v") != "STOP")) {
+    server.send(200, "text/plain", "IGNORED");   // she's driving herself (STOP always gets through)
     return;
   }
   if (server.hasArg("v")) {
@@ -616,7 +651,9 @@ void handleScan() {
 void handleMode() {
   if (!isController()) { server.send(403, "text/plain", "LOCKED"); return; }
   if (server.hasArg("v")) {
+    if (server.arg("v") == "mind" && !mindHostAlive()) { server.send(409, "text/plain", "no mind controller running"); return; }
     currentMode = server.arg("v");
+    mindMoveUntil = 0;
     if      (currentMode == "obstacle") Serial.println("OBSTACLE");
     else if (currentMode == "tank")     Serial.println("TANK");
     else                                Serial.println("WASD");
@@ -626,8 +663,30 @@ void handleMode() {
   }
 }
 
+// /mind?act=&steps= : one short move for her mind (MIND MODE above)
+void handleMind() {
+  if (!mindHostAlive() || server.client().remoteIP() != mindHostIP) { server.send(403, "text/plain", "LOCKED"); return; }
+  if (currentMode != "mind") { server.send(409, "application/json", "{\"ok\":false,\"error\":\"not in mind mode\"}"); return; }
+  String act = server.arg("act");
+  int steps = server.hasArg("steps") ? constrain(server.arg("steps").toInt(), 1, MIND_MAX_STEPS) : 1;
+  String cmd = act == "fwd" ? "FORWARD" : act == "bwd" ? "BACKWARD" : act == "left" ? "LEFT" : act == "right" ? "RIGHT" :
+               act == "stop" ? "STOP" : "";
+  if (cmd == "") { server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad act\"}"); return; }
+  mindBlocked = false;
+  if (cmd == "FORWARD" && lastDist > 0 && lastDist < MIND_WALL_CM) {
+    mindBlocked = true;
+    server.send(200, "application/json", "{\"ok\":false,\"blocked\":true,\"distance\":" + String(lastDist) + "}");
+    return;
+  }
+  lastCommand = cmd;
+  Serial.println(cmd);
+  mindMoveUntil = cmd == "STOP" ? 0 : millis() + steps * MIND_STEP_MS;
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
 void handleStatus() {
   lastStatusPollMs = millis();
+  if (server.arg("ctl") == "1" && mindHostSeen && server.client().remoteIP() == mindHostIP) mindHostSeen = millis();
 
   String json = "{";
   json += "\"mode\":\""  + currentMode       + "\",";
@@ -644,6 +703,9 @@ void handleStatus() {
   json += "\"fleet\":"   + String(fleetMode ? 1 : 0) + ",";
   json += "\"speed\":"   + String(lastSpeed) + ",";
   json += "\"guard\":"   + String(lastGuard ? 1 : 0) + ",";
+  json += "\"mindHost\":" + String(mindHostAlive() ? 1 : 0) + ",";
+  json += "\"mindSteps\":" + String(mindMoveUntil ? (int)((mindMoveUntil - millis() + MIND_STEP_MS - 1) / MIND_STEP_MS) : 0) + ",";
+  json += "\"blocked\":"  + String(mindBlocked ? 1 : 0) + ",";
   json += "\"ml\":"      + String(lastMotorL) + ",";
   json += "\"mr\":"      + String(lastMotorR) + ",";
   json += "\"scan_l\":"  + String(scanL) + ",";       // the last /scan, cm (999 no echo, -1 never)
@@ -940,6 +1002,7 @@ void handleRoot() {
     <button class="mode-btn active" id="btn-wasd"     onclick="setMode('wasd')">🎮 WASD</button>
     <button class="mode-btn"        id="btn-tank"     onclick="setMode('tank')">🕹 TANK</button>
     <button class="mode-btn"        id="btn-obstacle" onclick="setMode('obstacle')">⚡ OBSTACLE</button>
+    <button class="mode-btn"        id="btn-mind"     onclick="setMode('mind')" style="display:none" title="the LLM on her PC controller drives her">🧠 MIND</button>
   </div>
 
   <div class="speed-row">
@@ -1095,9 +1158,10 @@ void handleRoot() {
   function setMode(m) {
     mode = m;
     driveFetch('/mode?v=' + m);
-    ['wasd','tank','obstacle'].forEach(x => {
-      document.getElementById('btn-'   + x).classList.toggle('active', x === m);
-      document.getElementById('panel-' + x).classList.toggle('active', x === m);
+    ['wasd','tank','obstacle','mind'].forEach(x => {
+      document.getElementById('btn-' + x).classList.toggle('active', x === m);
+      const panel = document.getElementById('panel-' + x);   // MIND has no panel of its own
+      if (panel) panel.classList.toggle('active', x === m);
     });
     document.getElementById('s-mode').textContent = m.toUpperCase();
   }
@@ -1212,6 +1276,7 @@ void handleRoot() {
         document.getElementById('s-left').textContent  = d.left + ' cm';
         document.getElementById('s-right').textContent = d.right + ' cm';
         document.getElementById('s-cmd').textContent   = d.cmd;
+        document.getElementById('btn-mind').style.display = d.mindHost ? '' : 'none';   // only while her controller can think
         document.getElementById('s-ir').textContent    = d.ir;
         document.getElementById('s-temp').textContent  = d.temp + ' C';
         document.getElementById('s-hum').textContent   = d.hum + ' %';

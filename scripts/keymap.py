@@ -20,6 +20,7 @@ KEYMAP = [
         ("Q / A", "left track forward / back (TANK mode, hold)"),
         ("E / D", "right track forward / back (TANK mode, hold)"),
         ("Space", "stop (controllers)"),
+        ("M", "her MIND mode on / off: the LLM on this PC drives her (Python controller; x86 PC, GTX 1050+)"),
         ("X", "speed preset: 100, 75, 50, 25 % (web page)"),
         ("F1", "this window (Python controller; KEYS on the web page)"),
         ("Esc", "quit (controllers)"),

@@ -34,6 +34,8 @@ import requests
 
 import keymap as keys_window         # scripts/keymap.py: every key and button, in its own window (F1)
 from gamepad_drive import PadDrive, rumble_level  # any gamepad, or ARM's flight stick
+import mind          # scripts/mind.py: her LLM mind (M), the same file in every controller
+import mind_panel    # scripts/mind_panel.py: the mind's strip in the window
 
 # ----------------------------------------------------------------------------
 # Transport
@@ -46,8 +48,25 @@ class WifiLink:
         self.base = f"http://{host}:{port}"
         self.ok = False
         self.data = {}
+        self.mind_host = False   # mind.can_think() said yes: unlock with ctl=1 and check in on /status?ctl=1
+        self._unlocked = False
         self._lock = threading.Lock()
         threading.Thread(target=self._poll, daemon=True).start()
+
+    def unlock(self):
+        """Her PIN (secrets.h CONTROL_PIN_SECRET; a safety catch, not security): without it every
+        /cmd and /mode is LOCKED. ctl=1 too when this PC can run her mind."""
+        try:
+            params = {"pw": CONTROL_PIN, "ctl": "1"} if self.mind_host else {"pw": CONTROL_PIN}
+            self._unlocked = requests.get(self.base + "/unlock", params=params, timeout=2).status_code == 200
+        except Exception:
+            self._unlocked = False
+
+    def get_json(self, path, timeout=3):
+        try:
+            return requests.get(self.base + path, timeout=timeout).json()
+        except Exception:
+            return None
 
     def _get(self, path):
         try:
@@ -58,12 +77,15 @@ class WifiLink:
     def _poll(self):
         while True:
             try:
-                r = requests.get(self.base + "/status", timeout=1.0)
+                if not self._unlocked:   # at the start, and again after she reboots or WiFi drops
+                    self.unlock()
+                r = requests.get(self.base + "/status" + ("?ctl=1" if self.mind_host else ""), timeout=1.0)
                 with self._lock:
                     self.data = r.json()
                 self.ok = True
             except Exception:
                 self.ok = False
+                self._unlocked = False
             time.sleep(0.4)
 
     def telemetry(self):
@@ -93,6 +115,56 @@ DIM     = (102, 102, 136)  # --sub
 ACCENT_BG = (14, 34, 46)
 
 W, H = 420, 720
+
+# ----------------------------------------------------------------------------
+# Her mind (mind.py): M switches MIND mode on and off, only on a PC that can run it
+# ----------------------------------------------------------------------------
+CONTROL_PIN = "1234"   # esp8266/secrets.h CONTROL_PIN_SECRET
+# --- persona start ---
+PERSONA = (
+    "You're MILA, a small, fast tracked robot: playful, quick, cheeky and easily excited, always on the "
+    "go. You have one ultrasonic sensor on a servo that looks ahead and to the sides. Everyone in the "
+    "DREAM Robotics fleet makes way for you (your ESP8266 can't hear their beacons), and you rather "
+    "like that. NORA is the boss, WHIP is a show-off, NIKA is your little sister who thinks in square "
+    "waves."
+)
+VOICE = ("Microsoft Zira Desktop", 3, "high")
+NAME = "MILA"
+# --- persona end ---
+MOVES = {"fwd": "drive forward", "bwd": "drive backward", "left": "turn left", "right": "turn right",
+         "scan": "stop and look left, ahead and right with your sensor"}
+SAFETY = "she won't drive forward into anything within 20 cm, and NORA can lock her wheels"
+MIND_MOVE_TIMEOUT_S = 6.0
+
+
+def body(link):
+    """mind.Mind's look / act, over her /status, /mind and /scan."""
+    def look():
+        s = link.get_json("/status?ctl=1") or {}
+        senses = {k: s.get(k) for k in ("dist", "left", "right", "guard", "blocked", "temp", "hum", "light",
+                                         "thought", "hz", "ird") if k in s}
+        if s.get("scan_ms", -1) >= 0:
+            senses["last_scan_cm"] = {"left": s.get("scan_l"), "front": s.get("scan_f"), "right": s.get("scan_r"),
+                                      "age_s": round(s["scan_ms"] / 1000, 1)}
+        return senses
+
+    def act(move, steps):
+        if move == "scan":
+            return link.get_json("/scan", timeout=5) or {"ok": False, "error": "no answer"}
+        r = link.get_json(f"/mind?act={move}&steps={steps}")
+        if r is None:
+            raise ConnectionError(f"{NAME} isn't answering")
+        if move == "stop" or not r.get("ok"):
+            return r
+        t0 = time.time()
+        while time.time() - t0 < MIND_MOVE_TIMEOUT_S:
+            time.sleep(0.3)
+            s = link.get_json("/status?ctl=1") or {}
+            if not s.get("mindSteps"):
+                return {"ok": True, "stopped_at_a_wall": bool(s.get("blocked")), "front_cm": s.get("dist")}
+        return {"ok": True, "note": "still moving"}
+
+    return look, act
 
 
 class Button:
@@ -146,6 +218,16 @@ def main():
     args = ap.parse_args()
 
     link = WifiLink(args.host, args.port)
+    look, act = body(link)
+    her_mind = mind.Mind(NAME, PERSONA, MOVES, look, act, voice=VOICE[0], rate=VOICE[1], pitch=VOICE[2], safety=SAFETY)
+    mind_state = {"capable": False, "why": "checking this PC..."}
+
+    def check_mind():
+        mind_state["capable"], mind_state["why"] = mind.can_think()
+        if mind_state["capable"]:
+            link.mind_host = True
+            link.unlock()
+    threading.Thread(target=check_mind, daemon=True).start()
 
     pygame.init()
     screen = pygame.display.set_mode((W, H))
@@ -256,6 +338,8 @@ def main():
                     running = False
                 elif ev.key == pygame.K_F1:
                     keys_window.open_window()
+                elif ev.key == pygame.K_m and mind_state["capable"]:   # her MIND mode on / off
+                    set_mode("wasd" if her_mind.on else "mind")
                 elif ev.key == pygame.K_1:
                     set_mode("wasd")
                 elif ev.key == pygame.K_2:
@@ -304,6 +388,13 @@ def main():
         # ---- draw ----
         screen.fill(BG)
         t = link.telemetry()
+        # her mode is the switch: MIND (from M here, or her page) = thinking, anything else = not
+        in_mind = link.ok and t.get("mode") == "mind"
+        if in_mind and not her_mind.on and mind_state["capable"]:
+            her_mind.start(goal="explore the room, have fun, and don't bump into anything")
+        elif not in_mind and her_mind.on:
+            her_mind.on = False
+            her_mind.state = "off"
         # the pad buzzes as she nears a wall while it drives her forward (gamepad_drive.rumble_level)
         pad.rumble(*rumble_level(t.get("dist") if pad_drive == "FORWARD" else None))
         if "speed" in t:
@@ -353,6 +444,12 @@ def main():
 
         hint = f_sml.render("1/2/3 mode - WASD/QAED drive - space stop - esc quit", True, DIM)
         screen.blit(hint, hint.get_rect(centerx=W // 2, y=H - 24))
+
+        if her_mind.on:
+            mind_panel.draw(screen, pygame.Rect(8, H - 196, W - 16, 168), her_mind, f_med, f_sml, NAME,
+                            note="M: off", colours=(TEXT, DIM, RED, ACCENT))
+        elif not mind_state["capable"]:
+            screen.blit(f_sml.render(f"mind: {mind_state['why']}"[:60], True, DIM), (12, H - 40))
 
         pygame.display.flip()
         clock.tick(60)
