@@ -2,7 +2,8 @@
 mind.py - a robot's mind: look, think, speak, move, remember.
 
 The same file in every robot's controller (NORA, WHIP, MILA, ARM, the KIDAs),
-like peer_talk.py: change one, copy it to the others. The controller switches
+like peer_talk.py: change one, copy it to the others. (KIDA-01 also runs one on
+her own Pi when no PC is driving her: Mind(..., model=, think=False, ollama=).) The controller switches
 its robot into MIND mode and hands this a body:
 
     mind = Mind(
@@ -13,7 +14,8 @@ its robot into MIND mode and hands this a body:
         robot_say=None,                  # text -> True if the robot said it itself (KIDA's speaker)
         phrases=None,                    # {n: "text"}: lines on the robot's own speaker (NORA's SD card)
         robot_phrase=None,               # n -> True if the robot played phrase n
-    )
+        model=None, think=True, ollama=None,   # a mind on the robot itself (KIDA-01's Pi): its own small
+    )                                          # model and Ollama, thinking off for models without it
     mind.start(goal="explore and tell me what you find")
     ...
     mind.stop()                          # stands the robot (act("stop", 1)) and ends the loop
@@ -298,8 +300,9 @@ def see(jpeg, question, timeout=120):
 
 class Mind:
     def __init__(self, name, persona, moves, look, act, robot_say=None, phrases=None, robot_phrase=None,
-                 voice=VOICE, rate=0, pitch="medium", safety=None):
+                 voice=VOICE, rate=0, pitch="medium", safety=None, model=None, think=True, ollama=None):
         self.name = name
+        self.model, self.think, self.ollama = model, think, ollama   # None = this PC's (can_think())
         self.persona = persona
         # what her body won't let her do, whatever she decides (each robot says its own)
         self.safety = safety or "it stops at walls, when it tilts, and when it's locked"
@@ -418,8 +421,8 @@ class Mind:
 
     def _think(self, senses):
         system, user = self._prompt(senses)
-        r = requests.post(f"{OLLAMA_HOST}/api/chat", stream=True, timeout=THINK_TIMEOUT_S, json={
-            "model": CHOSEN_MODEL, "think": True, "stream": True,
+        r = requests.post(f"{self.ollama or OLLAMA_HOST}/api/chat", stream=True, timeout=THINK_TIMEOUT_S, json={
+            "model": self.model or CHOSEN_MODEL, "think": self.think, "stream": True,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         })
         r.raise_for_status()
