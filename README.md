@@ -229,6 +229,7 @@ Every key, gamepad button and remote button. The same list opens in its own wind
 | AUTO / MANUAL | OBSTACLE / WASD mode |
 | SPEED | speed preset |
 | LOCK / UNLOCK | lock her wheels (nothing drives her) / free them |
+| | *the same lock over WiFi: /motorlockOn, /motorlockOff?pw=<her PIN> (RIFT's Lock all / Unlock all)* |
 
 <!-- keymap:end -->
 

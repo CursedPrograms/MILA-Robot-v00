@@ -136,6 +136,15 @@ unsigned long holdMs = IR_HOLD_MS;  // release timeout for the current drive (re
 #define LINK_SPEED     0x4F   // cycle speed (the OK button)
 #define LINK_UNLOCK    0x50   // NORA frees the wheels
 #define LINK_LOCK      0x51   // NORA locks them: stop, and no driving until LINK_UNLOCK
+
+// The wheel lock changes here, from NORA's IR link or the ESP8266 (/motorlockOn, /motorlockOff):
+// locking stops her and leaves obstacle mode, and the ESP8266 hears LOCK:1 / LOCK:0 for /status.
+void setLinkLocked(bool locked) {
+  linkLocked = locked;
+  if (locked) runIRCommand(IR_MODE_WASD);
+  Serial.print("LOCK:");
+  Serial.println(locked ? 1 : 0);
+}
 const unsigned long LINK_HOLD_MS = 500;
 
 // Tank mode is button-toggled, not held: an IR receiver only ever decodes
@@ -510,8 +519,8 @@ void runLinkCommand(uint8_t c, bool isRepeat) {
     case LINK_OBSTACLE: if (!isRepeat) runIRCommand(IR_MODE_OBSTACLE); return;
     case LINK_MANUAL:   if (!isRepeat) runIRCommand(IR_MODE_WASD);     return;
     case LINK_SPEED:    if (!isRepeat) runIRCommand(IR_OK);            return;
-    case LINK_UNLOCK:   linkLocked = false;                            return;
-    case LINK_LOCK:     linkLocked = true; runIRCommand(IR_MODE_WASD); return;   // stop, out of obstacle mode
+    case LINK_UNLOCK:   setLinkLocked(false); return;
+    case LINK_LOCK:     setLinkLocked(true);  return;   // stop, out of obstacle mode
     default: return;
   }
   if (driveMode != MODE_WASD) runIRCommand(IR_MODE_WASD);
@@ -782,6 +791,12 @@ void checkSerial() {
 
   } else if (cmd == "UNMUTE") {
     setBuzzerSilent(false);
+
+  } else if (cmd == "LOCK") {       // the ESP8266's /motorlockOn
+    setLinkLocked(true);
+
+  } else if (cmd == "UNLOCK") {     // its /motorlockOff, after it checked her PIN
+    setLinkLocked(false);
 
   } else if (driveMode == MODE_OBSTACLE) {
     return;
