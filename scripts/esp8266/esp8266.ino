@@ -717,8 +717,10 @@ void handleStatus() {
 }
 
 // =====================
+// The page lives in flash (PROGMEM) and streams from there: as a String it was a 27 KB copy on
+// the heap every request, the ESP8266 ran out, and the page came back empty (just white).
 void handleRoot() {
-  String html = R"rawhtml(
+  static const char html[] PROGMEM = R"rawhtml(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1330,5 +1332,5 @@ void handleRoot() {
 </html>
 )rawhtml";
 
-  server.send(200, "text/html", html);
+  server.send_P(200, "text/html", html);
 }
