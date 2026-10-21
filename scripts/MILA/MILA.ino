@@ -113,6 +113,11 @@ void setSpeedPct(int v) {
 // #define IR_MUTE   0x00
 
 const unsigned long IR_HOLD_MS = 350;  // no repeat frame within this long = WASD button released
+// Left / right turn a quarter as long per tap (a full 350 ms tap turned her too far). While the
+// button's held the remote repeats about every 108 ms, so then the timeout covers that and the
+// turn stays smooth instead of stuttering.
+const unsigned long IR_TURN_TAP_MS  = IR_HOLD_MS / 4;
+const unsigned long IR_TURN_HOLD_MS = 130;
 unsigned long lastIRMs = 0;
 uint8_t lastIRCmd = 0;
 bool irDriving = false;  // true while a held WASD-mode IR key is driving the motors
@@ -486,7 +491,9 @@ void checkIR() {
       bool isRepeat = IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT;
       if (!isRepeat) lastIRCmd = IrReceiver.decodedIRData.command;
       lastIRMs = millis();
-      if (!isRepeat) holdMs = IR_HOLD_MS;
+      bool irTurn = lastIRCmd == IR_LEFT || lastIRCmd == IR_RIGHT;
+      if (!isRepeat) holdMs = irTurn ? IR_TURN_TAP_MS : IR_HOLD_MS;
+      else if (irTurn) holdMs = IR_TURN_HOLD_MS;
 
       Serial.print("IR:0x");
       Serial.println(lastIRCmd, HEX);
