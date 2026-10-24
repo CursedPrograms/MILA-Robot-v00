@@ -153,7 +153,21 @@ run.bat                       # Windows (cmd)
 .\run.ps1                     # Windows (PowerShell)
 
 ./run.sh --host 192.168.4.1 --port 5010
+./run.sh --emulate            # a pretend MILA on this PC (scripts/fake_mila.py), no robot
 ```
+
+The Python controller (`run.*`, `scripts/mila_controller.py`):
+- **Two keys curve her**: W+A drives only her right track, so she arcs forward-left (W+D, S+A, S+D the same
+  way), and so does the stick half-way round. Her UNO has no speed control yet (section 12 of the fleet
+  TODO), so a curve is one track on, the other off.
+- **Driving takes over**: driving in OBSTACLE puts her in WASD, and she stops when you let go. **STOP**
+  (Space, the pad's A) works in any mode, TANK too.
+- **Settings stick**: mode and speed are sent again until her `/status` says so.
+- **EMULATE**: a pretend MILA in a pretend room: her sonar reading drops as she drives at a wall, and her
+  UNO's guard stops her within 20 cm. **VOICE**: she talks through this PC (Zira, quick and cheeky): modes,
+  walls, her wheel lock, speed. **THEME**: DEFAULT, LIGHT or CUSTOM, from `colour_scheme.xml`.
+- Pads: Xbox, PlayStation and Switch pads all have the same buttons (`gamepad_drive.py`, SDL's controller
+  layer). Her MIND log: `~/.robot_minds/logs/MILA-<date>.log`.
 
 If MILA joined the RIFT or NORA network (fleet mode) she won't be at `192.168.4.1`: RIFT's dashboard lists her address. Press **SCAN NETWORK** in the C++, C# or F# controller, or start it with `--host auto`.
 
@@ -190,9 +204,12 @@ Every key, gamepad button and remote button. The same list opens in its own wind
 | 1 / 2 / 3 | WASD / TANK / OBSTACLE mode |
 | W / Up, S / Down | forward / back (WASD mode, hold) |
 | A / Left, D / Right | turn left / right (WASD mode, hold) |
+| W+A, W+D, S+A, S+D | curve: one track drives (Python controller; the stick too) |
+| | *Python controller: driving in OBSTACLE takes over (WASD); she stops when you let go* |
 | Q / A | left track forward / back (TANK mode, hold) |
 | E / D | right track forward / back (TANK mode, hold) |
-| Space | stop (controllers) |
+| Space | stop, in any mode (controllers; the STOP button too) |
+| EMULATE / VOICE / THEME | Python controller: a pretend MILA on this PC / her voice / colours |
 | M | her MIND mode on / off: the LLM on this PC drives her (Python controller; x86 PC, GTX 1050+) |
 | X | speed preset: 100, 75, 50, 25 % (web page) |
 | F1 | this window (Python controller; KEYS on the web page) |
@@ -203,9 +220,9 @@ Every key, gamepad button and remote button. The same list opens in its own wind
 
 | Key | Does |
 |---|---|
-| Left stick / D-pad | drive (WASD mode) |
+| Left stick / D-pad | drive, half-way round curves (WASD mode; takes over from OBSTACLE) |
 | LB / RB, right stick, twist | turn left / right (Python controller) |
-| A (button 0) | stop |
+| A (button 0) | stop (any mode) |
 | B (1) / X (2) / Y (3) | OBSTACLE / WASD / TANK mode (Python controller) |
 | Start (7) | speed + 25 % (Python controller) |
 | | *C++, C# and F# controllers: stick or D-pad drive, triggers speed, A stops, bumpers change mode* |

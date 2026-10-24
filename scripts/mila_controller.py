@@ -22,6 +22,10 @@ CONTROLS
   F1            every key, gamepad button and remote button (scripts/keymap.py)
   Gamepad       stick / D-pad drive (WASD mode), A stops, B/X/Y obstacle/WASD/TANK, Start speed +
   Everything is also clickable with the mouse.
+  Two keys at once curve her (W+A: only her right track drives, so she arcs forward-left), and so
+  does the stick. Driving while she drives herself (OBSTACLE) takes over: WASD, and she stops when
+  you let go. STOP works in any mode. EMULATE: a pretend robot on this PC (--emulate too).
+  VOICE: she talks through this PC. THEME: default / light / custom, from colour_scheme.xml.
 """
 
 import os
@@ -33,6 +37,7 @@ import pygame
 import requests
 
 import keymap as keys_window         # scripts/keymap.py: every key and button, in its own window (F1)
+import controller_kit as kit         # scripts/controller_kit.py: themes, settings that stick, Voice (every robot's)
 from gamepad_drive import PadDrive, rumble_level  # any gamepad, or ARM's flight stick
 import mind          # scripts/mind.py: her LLM mind (M), the same file in every controller
 import mind_panel    # scripts/mind_panel.py: the mind's strip in the window
@@ -48,6 +53,9 @@ class WifiLink:
         self.base = f"http://{host}:{port}"
         self.ok = False
         self.data = {}
+        self._queue = []                   # /cmd and /mode, sent in order by one thread (a curve is
+        self._queued = threading.Event()   # STOP then one track: the order matters)
+        threading.Thread(target=self._sender, daemon=True).start()
         self.mind_host = False   # mind.can_think() said yes: unlock with ctl=1 and check in on /status?ctl=1
         self._unlocked = False
         self._lock = threading.Lock()
@@ -92,27 +100,48 @@ class WifiLink:
         with self._lock:
             return dict(self.data)
 
+    def _sender(self):
+        while True:
+            self._queued.wait()
+            self._queued.clear()
+            while self._queue:
+                self._get(self._queue.pop(0))
+
+    def _send(self, path):
+        self._queue.append(path)
+        self._queued.set()
+
     def cmd(self, action):
-        threading.Thread(target=self._get, args=(f"/cmd?v={action}",), daemon=True).start()
+        self._send(f"/cmd?v={action}")
 
     def mode(self, m):
-        threading.Thread(target=self._get, args=(f"/mode?v={m}",), daemon=True).start()
+        self._send(f"/mode?v={m}")
+
+    def move_to(self, host, port):
+        """Talk to another address (EMULATE on / off); unlock again there."""
+        self.base = f"http://{host}:{port}"
+        self.ok, self._unlocked, self.data = False, False, {}
 
 
 # ----------------------------------------------------------------------------
 # UI — same dark/cyan palette as the onboard dashboard
 # ----------------------------------------------------------------------------
 
-BG      = (10, 10, 15)     # --bg
-PANEL   = (18, 18, 26)     # --panel
-BORDER  = (30, 30, 46)     # --border
-ACCENT  = (0, 212, 255)    # --accent
-ACCENT2 = (124, 58, 237)   # --accent2
-RED     = (255, 68, 68)    # --red
-GREEN   = (0, 255, 136)    # --green
-TEXT    = (224, 224, 240)  # --text
-DIM     = (102, 102, 136)  # --sub
-ACCENT_BG = (14, 34, 46)
+# Always from her colour_scheme.xml (sampled from her avatar), through controller_kit's themes:
+# DEFAULT, LIGHT or CUSTOM (THEME). Her scheme has no red, so warnings are its danger colour, brightened.
+def bright(c):
+    top = max(c) or 1
+    return tuple(min(255, v * 255 // top) for v in c)
+
+
+def apply_theme(c):
+    globals().update(BG=c["background"], PANEL=c["panel"], BORDER=c["border"], ACCENT=c["accent"],
+                     ACCENT2=c["accent2"], RED=bright(c["danger_bg"]), GREEN=c["accent_hover"], TEXT=c["text"],
+                     DIM=c["text_sec"], ACCENT_BG=c["button_hover_bg"])
+
+
+SETTINGS = kit.Settings()
+apply_theme(SETTINGS.colours())
 
 W, H = 420, 720
 
@@ -130,6 +159,19 @@ PERSONA = (
 )
 VOICE = ("Microsoft Zira Desktop", 3, "high")
 NAME = "MILA"
+# Her voice through this PC outside MIND too (VOICE): playful, quick, cheeky
+LINES = {
+    "connect": ["MILA here! Let's go go go!", "Ooh, a controller! Hi hi!", "Ready! Where are we going?"],
+    "emulate": ["A pretend me? Cute. Still fast though.", "Practice mode! I'm pretending really hard."],
+    "lost": ["Hey, where'd you go?", "Hello? Still there? I'm bored."],
+    "mode_wasd": ["You drive! Don't be boring.", "Steering wheel's yours. Go fast!"],
+    "mode_tank": ["Tank mode! One track each, let's roll.", "Left track, right track. Easy peasy."],
+    "mode_obstacle": ["Off I go, exploring by myself!", "Byeee! I'll find my own way."],
+    "wall": ["Whoa, wall! Nope.", "Bonk avoided!", "Who put that there?"],
+    "locked": ["Hey! My wheels are locked!", "NORA, really? Locked again?"],
+    "unlocked": ["Free! Wheee!", "Wheels back! Let's go!"],
+    "speed": ["Speed {speed} percent. Faster is better.", "{speed} percent! Zoom zoom."],
+}
 # --- persona end ---
 MOVES = {"fwd": "drive forward", "bwd": "drive backward", "left": "turn left", "right": "turn right",
          "scan": "stop and look left, ahead and right with your sensor"}
@@ -215,9 +257,33 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="192.168.4.1")
     ap.add_argument("--port", type=int, default=5010)
+    ap.add_argument("--emulate", action="store_true", help="a pretend robot on this PC, no robot needed")
     args = ap.parse_args()
 
     link = WifiLink(args.host, args.port)
+    fake = {"robot": None}   # EMULATE: the fake robot running in here
+
+    def toggle_emulate():
+        if fake["robot"]:
+            fake["robot"].stop()
+            fake["robot"] = None
+            link.move_to(args.host, args.port)
+        else:
+            import fake_mila
+            try:
+                fake["robot"] = fake_mila.start(quiet=True)
+                link.move_to("127.0.0.1", fake_mila.FakeMila.PORTS[0])
+            except OSError as e:
+                print(f"Can't start the fake: {e}")
+        emu_btn.active = fake["robot"] is not None
+
+    voice = kit.Voice(VOICE[0], LINES, VOICE[1], VOICE[2])
+    voice.on = SETTINGS.get("voice", True)
+    heard = {"s": None}
+    if args.emulate:
+        toggle_emulate_at_start = True
+    else:
+        toggle_emulate_at_start = False
     look, act = body(link)
     her_mind = mind.Mind(NAME, PERSONA, MOVES, look, act, voice=VOICE[0], rate=VOICE[1], pitch=VOICE[2], safety=SAFETY)
     mind_state = {"capable": False, "why": "checking this PC..."}
@@ -251,10 +317,12 @@ def main():
         buttons.append(b)
         return b
 
+    pending = kit.Pending()   # mode / speed re-sent until her /status says so
+
     def set_mode(m):
         nonlocal mode
         mode = m
-        link.mode(m)
+        pending.want("mode", m, lambda: link.mode(m))
         for b, name in zip(mode_btns, ("wasd", "tank", "obstacle")):
             b.active = (name == m)
 
@@ -273,7 +341,7 @@ def main():
     def adjust_speed(delta):
         new_pct = max(25, min(100, speed_state["pct"] + delta))
         speed_state["pct"] = new_pct
-        link.cmd(f"SPEED:{new_pct}")
+        pending.want("speed", new_pct, lambda: link.cmd(f"SPEED:{new_pct}"))
 
     speed_btns = [
         add((20, 150, 180, 40), "SPD -", lambda: adjust_speed(-25)),
@@ -281,9 +349,24 @@ def main():
     ]
 
     # WASD d-pad
-    pad_cx, pad_cy, bs, gap = W // 2, 280, 70, 8
+    pad_cx, pad_cy, bs, gap = W // 2, 290, 60, 6   # between the speed buttons (to y 190) and the tiles (from 400)
+    def take_over():
+        """Driving her while she drives herself (OBSTACLE): WASD, so she does what's pressed and
+        stops on release. (Her ESP8266 ignores /cmd drives in OBSTACLE.)"""
+        if mode == "obstacle":
+            set_mode("wasd")
+
+    def stop_all():
+        """STOP, in any mode: out of OBSTACLE / MIND, tracks still."""
+        nonlocal active_drive, curve
+        active_drive, curve = None, None
+        if mode in ("obstacle", "mind"):
+            set_mode("wasd")
+        link.cmd("STOP")
+
     def start_drive(action):
         nonlocal active_drive
+        take_over()
         active_drive = action
         link.cmd(action)
 
@@ -294,12 +377,36 @@ def main():
             link.cmd("STOP")
 
     wasd_btns = {
-        "FORWARD": add((pad_cx - bs // 2, pad_cy - bs - gap, bs, bs), "^", lambda: start_drive("FORWARD")),
-        "BACKWARD": add((pad_cx - bs // 2, pad_cy + gap, bs, bs), "v", lambda: start_drive("BACKWARD")),
-        "LEFT": add((pad_cx - bs - gap - bs // 2 - gap, pad_cy - bs // 2, bs, bs), "<", lambda: start_drive("LEFT")),
-        "RIGHT": add((pad_cx + gap + bs // 2 + gap, pad_cy - bs // 2, bs, bs), ">", lambda: start_drive("RIGHT")),
+        "FORWARD": add((pad_cx - bs // 2, pad_cy - bs // 2 - gap - bs, bs, bs), "^", lambda: start_drive("FORWARD")),
+        "BACKWARD": add((pad_cx - bs // 2, pad_cy + bs // 2 + gap, bs, bs), "v", lambda: start_drive("BACKWARD")),
+        "LEFT": add((pad_cx - bs // 2 - gap - bs, pad_cy - bs // 2, bs, bs), "<", lambda: start_drive("LEFT")),
+        "RIGHT": add((pad_cx + bs // 2 + gap, pad_cy - bs // 2, bs, bs), ">", lambda: start_drive("RIGHT")),
     }
-    stop_btn = add((pad_cx - bs // 2, pad_cy - bs // 2, bs, bs), "STOP", lambda: link.cmd("STOP"))
+    stop_btn = add((pad_cx - bs // 2, pad_cy - bs // 2, bs, bs), "STOP", stop_all)
+
+    # header row: EMULATE / VOICE / THEME
+    def toggle_voice():
+        voice.on = not voice.on
+        SETTINGS["voice"] = voice.on
+        SETTINGS.save()
+        voice_btn.label = "VOICE ON" if voice.on else "VOICE OFF"
+        voice_btn.active = voice.on
+
+    def theme_next():
+        apply_theme(SETTINGS.next_theme())
+        theme_btn.label = SETTINGS.theme
+
+    emu_btn = add((20, 62, 120, 28), "EMULATE", toggle_emulate)
+    voice_btn = add((150, 62, 120, 28), "VOICE ON" if voice.on else "VOICE OFF", toggle_voice, voice.on)
+    theme_btn = add((280, 62, 120, 28), SETTINGS.theme, theme_next)
+
+    # held keys and the stick curve her: a track alone (she has no speed control yet)
+    KEYS = {"fwd": (pygame.K_w, pygame.K_UP), "back": (pygame.K_s, pygame.K_DOWN),
+            "turn_l": (pygame.K_a, pygame.K_LEFT), "turn_r": (pygame.K_d, pygame.K_RIGHT)}
+    CURVES = {(1, 1): ["STOP", "R_FWD"], (1, -1): ["STOP", "L_FWD"],     # forward-left / -right
+              (-1, 1): ["STOP", "R_BWD"], (-1, -1): ["STOP", "L_BWD"],   # back-left / -right
+              (1, 0): ["FORWARD"], (-1, 0): ["BACKWARD"], (0, 1): ["LEFT"], (0, -1): ["RIGHT"]}
+    curve = None   # what the keys / stick are doing now: (forward, turn) signs
 
     # TANK track buttons
     tank_y = 280
@@ -310,17 +417,13 @@ def main():
         add((W - 150, tank_y + 40, 90, 50), "D\nR-BWD", lambda: start_drive("R_BWD")),
     ]
 
-    key_drive_wasd = {
-        pygame.K_UP: "FORWARD", pygame.K_w: "FORWARD",
-        pygame.K_DOWN: "BACKWARD", pygame.K_s: "BACKWARD",
-        pygame.K_LEFT: "LEFT", pygame.K_a: "LEFT",
-        pygame.K_RIGHT: "RIGHT", pygame.K_d: "RIGHT",
-    }
     key_drive_tank = {
         pygame.K_q: "L_FWD", pygame.K_a: "L_BWD",
         pygame.K_e: "R_FWD", pygame.K_d: "R_BWD",
     }
 
+    if toggle_emulate_at_start:
+        toggle_emulate()
     pad = PadDrive()          # a gamepad / joystick, plugged in any time
     pad_drive = None          # the drive the pad is holding
     PAD_DRIVE = {"fw": "FORWARD", "bw": "BACKWARD", "left": "LEFT", "right": "RIGHT",
@@ -347,15 +450,12 @@ def main():
                 elif ev.key == pygame.K_3:
                     set_mode("obstacle")
                 elif ev.key == pygame.K_SPACE:
-                    stop_drive()
-                elif mode == "wasd" and ev.key in key_drive_wasd:
-                    start_drive(key_drive_wasd[ev.key])
+                    stop_all()
                 elif mode == "tank" and ev.key in key_drive_tank:
                     start_drive(key_drive_tank[ev.key])
 
             elif ev.type == pygame.KEYUP:
-                keymap = key_drive_wasd if mode == "wasd" else key_drive_tank
-                if ev.key in keymap and active_drive == keymap[ev.key]:
+                if mode == "tank" and ev.key in key_drive_tank and active_drive == key_drive_tank[ev.key]:
                     stop_drive()
 
             elif ev.type == pygame.MOUSEBUTTONDOWN:
@@ -370,16 +470,26 @@ def main():
                 if active_drive:
                     stop_drive()
 
-        # gamepad: the stick / D-pad drives in WASD mode, buttons do the rest
-        d = PAD_DRIVE.get(pad.direction()) if mode == "wasd" else None
-        if d != pad_drive:
-            if d:
-                start_drive(d)
-            elif active_drive == pad_drive:
-                stop_drive()
-            pad_drive = d
+        # held keys and the stick drive her (not in TANK: its keys are the tracks), two at once a curve
+        if mode != "tank":
+            f, _, tn = kit.keys_vector(pygame.key.get_pressed(), KEYS)
+            if not (f or tn):
+                pf, ps, pt = pad.vector()
+                tn = pt or ps   # a tank turns with the stick across
+                f = 0 if abs(pf) < 0.3 else (1 if pf > 0 else -1)
+                tn = 0 if abs(tn) < 0.3 else (1 if tn > 0 else -1)
+            want = (f, tn) if (f or tn) else None
+            if want != curve:
+                if want:
+                    take_over()
+                    for c in CURVES[want]:
+                        link.cmd(c)
+                elif curve:
+                    link.cmd("STOP")
+                curve = want
+            pad_drive = "FORWARD" if want and want[0] > 0 else None
         for b in pad.presses():
-            if b == 0: stop_drive(); link.cmd("STOP")
+            if b == 0: stop_all()
             elif b == 1: set_mode("obstacle")
             elif b == 2: set_mode("wasd")
             elif b == 3: set_mode("tank")
@@ -397,11 +507,35 @@ def main():
             her_mind.state = "off"
         # the pad buzzes as she nears a wall while it drives her forward (gamepad_drive.rumble_level)
         pad.rumble(*rumble_level(t.get("dist") if pad_drive == "FORWARD" else None))
-        if "speed" in t:
+        if link.ok:
+            pending.check(t)
+        if "speed" in t and pending.value("speed") is None:
             try:
                 speed_state["pct"] = int(float(t["speed"]))
             except (TypeError, ValueError):
                 pass
+        if t.get("mode") in ("wasd", "tank", "obstacle", "mind") and t["mode"] != mode and pending.value("mode") is None:
+            mode = t["mode"]
+            for b, name in zip(mode_btns, ("wasd", "tank", "obstacle")):
+                b.active = (name == mode)
+
+        # her voice, from what changed (her MIND talks for itself)
+        was, now_s = heard["s"], (dict(t) if link.ok and t else None)
+        heard["s"] = now_s
+        if not her_mind.on:
+            if now_s is None and was:
+                voice.say("lost")
+            elif now_s and was is None:
+                voice.say("emulate" if fake["robot"] else "connect")
+            elif now_s and was:
+                if now_s.get("mode") != was.get("mode") and now_s.get("mode") != "mind":
+                    voice.say("mode_" + str(now_s.get("mode")))
+                if str(now_s.get("guard")) == "1" and str(was.get("guard")) != "1":
+                    voice.say("wall")
+                if now_s.get("lock") != was.get("lock"):
+                    voice.say("locked" if now_s.get("lock") else "unlocked")
+                if now_s.get("speed") != was.get("speed") and now_s.get("speed") is not None:
+                    voice.say("speed", speed=now_s.get("speed"))
 
         if avatar:
             screen.blit(avatar, (16, 10))
@@ -409,22 +543,23 @@ def main():
         screen.blit(title, title.get_rect(centerx=W // 2, y=14))
         conn = "connected" if link.ok else "OFFLINE"
         col = GREEN if link.ok else RED
-        sub = f_sml.render(f"{args.host}:{args.port}   {conn}", True, col)
+        where = f"EMULATED  {fake['robot'].last_log()}" if fake["robot"] else f"{args.host}:{args.port}   {conn}"
+        sub = f_sml.render(kit.fit(where, f_sml, W - 90), True, col)
         screen.blit(sub, sub.get_rect(centerx=W // 2, y=46))
 
-        for b in mode_btns:
+        for b in mode_btns + [emu_btn, voice_btn, theme_btn]:
             b.draw(screen)
 
         for b in speed_btns:
             b.draw(screen)
 
-        if mode == "wasd":
-            for b in wasd_btns.values():
-                b.draw(screen)
-            stop_btn.draw(screen)
-        elif mode == "tank":
+        if mode == "tank":
             for b in tank_btns:
                 b.draw(screen)
+        else:
+            for b in wasd_btns.values():
+                b.draw(screen)
+        stop_btn.draw(screen)   # STOP in any mode
 
         # status tiles
         sy = 400
@@ -442,18 +577,25 @@ def main():
         stat_tile(screen, f_sml, f_med, 20, sy + 216, colw, "SPEED %", t.get("speed", "--"))
         stat_tile(screen, f_sml, f_med, 30 + colw, sy + 216, colw, "GUARD", guard_txt)
 
-        hint = f_sml.render("1/2/3 mode - WASD/QAED drive - space stop - esc quit", True, DIM)
+        hint = f_sml.render(kit.fit("1/2/3 mode - WASD drive (W+A curves) - QAED tracks - space stop - esc quit",
+                                    f_sml, W - 16), True, DIM)
         screen.blit(hint, hint.get_rect(centerx=W // 2, y=H - 24))
 
         if her_mind.on:
             mind_panel.draw(screen, pygame.Rect(8, H - 196, W - 16, 168), her_mind, f_med, f_sml, NAME,
                             note="M: off", colours=(TEXT, DIM, RED, ACCENT))
+        elif voice.on and voice.said:
+            screen.blit(f_sml.render(kit.fit(f'{NAME}: "{voice.said}"', f_sml, W - 24), True, TEXT), (12, H - 40))
         elif not mind_state["capable"]:
-            screen.blit(f_sml.render(f"mind: {mind_state['why']}"[:60], True, DIM), (12, H - 40))
+            screen.blit(f_sml.render(kit.fit(f"mind: {mind_state['why']}", f_sml, W - 24), True, DIM), (12, H - 40))
 
         pygame.display.flip()
         clock.tick(60)
 
+    link.cmd("STOP")
+    time.sleep(0.3)
+    if fake["robot"]:
+        fake["robot"].stop()
     pygame.quit()
 
 
