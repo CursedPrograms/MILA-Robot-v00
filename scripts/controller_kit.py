@@ -8,7 +8,8 @@ others. Fleet TODO section 13 lists who has it.
     fit(text, font, width)                 # cut to fit, with "..."
     pending = Pending()                    # settings re-sent until the robot's status says so:
     pending.want("mode", 1, send)          #   sends now, then again every RESEND_S...
-    pending.check(status)                  #   ...until status["mode"] == 1 or GIVE_UP_S went by
+    pending.check(status, at)              #   ...until status["mode"] == 1 or GIVE_UP_S went by
+                                           #   (at: when that status was asked for, so an old one can't confirm it)
     pending.value("mode")                  # what was just picked (show it before the robot confirms)
     keys_vector(pressed, KEYS)             # held keys -> (forward, side, turn), -1..1 each: W+A is both
     FakeRobot                              # a pretend robot's web server for EMULATE (fake_<robot>.py)
@@ -145,7 +146,10 @@ class Pending:
         w = self._want.get(key)
         return None if w is None else w[0]
 
-    def check(self, status):
+    def check(self, status, at=None):
+        """at: time.monotonic() when this status was asked for. A status asked for before the
+        setting was picked still shows the old state (or a value from before that), so it can't
+        confirm it: without at, every status counts."""
         now = time.monotonic()
         for key in list(self._want):
             value, send, first, last = self._want[key]
@@ -154,7 +158,7 @@ class Pending:
                 same = got is not None and float(got) == float(value)
             except (TypeError, ValueError):
                 same = got == value
-            if same or now - first > GIVE_UP_S:
+            if (same and (at is None or at >= first)) or now - first > GIVE_UP_S:
                 del self._want[key]
             elif now - last > RESEND_S:
                 send()
