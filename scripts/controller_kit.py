@@ -227,9 +227,11 @@ class Voice:
 # ---- EMULATE: a pretend robot's web server ----
 
 class FakeRobot:
-    """A pretend robot for EMULATE: serves route(path, query) -> (code, body) on host:port, steps a
-    pretend world 20 times a second (step(dt)), and keeps a log of what it did (log() / LOG).
-    Subclass it in fake_<robot>.py with that robot's own routes."""
+    """A pretend robot for EMULATE: serves route(port, path, query) -> (code, body[, content_type]) on
+    host:port, steps a pretend world 20 times a second (step(dt)), and keeps a log of what it did
+    (log() / LOG). Subclass it in fake_<robot>.py with that robot's own routes.
+    body: a dict / list (JSON), text, bytes (an image), or a generator of bytes (streamed: a camera).
+    GET and POST both come to route(); a POST's body is q["_body"], and q["_json"] if it's JSON."""
 
     NAME = "ROBOT"
     PORTS = (5000,)
@@ -247,16 +249,51 @@ class FakeRobot:
                 pass
 
             def do_GET(self):
+                self._reply({})
+
+            def do_POST(self):   # the body as q["_body"] (bytes), and q["_json"] if it's a JSON object
+                raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                extra = {"_body": raw}
+                try:
+                    obj = json.loads(raw or b"null")
+                    if isinstance(obj, dict):
+                        extra["_json"] = obj
+                except ValueError:
+                    pass
+                self._reply(extra)
+
+            def _reply(self, extra):
                 url = urlparse(self.path)
                 q = {k: v[0] for k, v in parse_qs(url.query).items()}
+                q.update(extra)
                 with robot.lock:
-                    code, body = robot.route(self.server.server_address[1], url.path, q)
-                data = (json.dumps(body) if isinstance(body, (dict, list)) else str(body)).encode()
-                self.send_response(code)
-                self.send_header("Content-Type", "application/json" if isinstance(body, (dict, list)) else "text/plain")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
+                    res = robot.route(self.server.server_address[1], url.path, q)
+                code, body = res[0], res[1]
+                ctype = res[2] if len(res) > 2 else None
+                try:
+                    if hasattr(body, "__next__"):   # a generator: streamed (an MJPEG camera), outside the lock
+                        self.send_response(code)
+                        self.send_header("Content-Type", ctype or "application/octet-stream")
+                        self.end_headers()
+                        for chunk in body:
+                            if robot._stop.is_set():
+                                break
+                            self.wfile.write(chunk)
+                            self.wfile.flush()
+                        return
+                    if isinstance(body, bytes):
+                        data, ctype = body, ctype or "application/octet-stream"
+                    elif isinstance(body, (dict, list)):
+                        data, ctype = json.dumps(body).encode(), ctype or "application/json"
+                    else:
+                        data, ctype = str(body).encode(), ctype or "text/plain"
+                    self.send_response(code)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                except (ConnectionError, OSError):
+                    pass   # the controller hung up (a stream it stopped reading)
 
         class Server(ThreadingHTTPServer):
             allow_reuse_address = False   # on Windows a second fake would share the port silently
