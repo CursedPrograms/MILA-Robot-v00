@@ -78,6 +78,11 @@ MILA is a small tank-chassis robot you can drive over WiFi. It hosts its own web
 - **MIND mode:** the LLM on her PC controller drives her, one short move at a time: she looks (her distances, or a SCAN left / ahead / right), thinks out loud on screen, says what she's doing in her own voice (playful and quick), moves, and remembers. **M** on the Python controller, or MIND on her dashboard while it's connected. Only on an x86 PC with 8 GB+ RAM and a GTX 1050 or better.
 - **Ticks near walls:** driving forward, the buzzer ticks faster as a wall gets close, like a parking sensor (ticks, not a tone: the buzzer shares a timer with the IR receiver).
 - **Lights in the dark:** driving forward in the dark (the light sensor), her LED goes white instead of blue to light the way.
+- **Android app (`Android App/`, package `com.synthwomb`): FIND gets her address from the fleet list, or type it in. Hold the stick to drive, let go to stop, and her modes, HELLO, DANCE, speed and the wheel lock are buttons. Build it with `gradlew assembleDebug`.**
+- **FOLLOW:** she keeps your hand 30 cm from her sonar, in short pulses. A button on her dashboard, **F** on the Python controller, 4 on the remote (a guessed code).
+- **HELLO and DANCE:** on the spot, in WASD or TANK: her sonar head shakes and she beeps. Buttons on her dashboard, **H** and **N** on the Python controller, 5 and 6 on the remote (guessed codes). Anything from her ESP cuts them short.
+- **Live view:** her Python controller draws her from above, tracks turning, sonar reaching out.
+- **Several devices:** up to four can be unlocked at once, her page follows a mode changed elsewhere, and `/status` carries `rev`, her settings in one number.
 - **Gamepad rumble:** the pad buzzes harder as she nears a wall while you drive her forward.
 - **The Python controller unlocks her with her PIN** when it connects (it didn't before, so every drive command came back LOCKED).
 
@@ -357,6 +362,6 @@ MILA's ESP8266 **sends** the beacon over ESP-NOW, with what she's doing said in 
 ## The DREAM Robotics ecosystem
 
 **Minds** — [DREAM](https://github.com/CursedPrograms/DREAM) companion · [TINA](https://github.com/CursedPrograms/TINA) engineer · [NINA](https://github.com/CursedPrograms/NINA) caretaker · [RIFT](https://github.com/CursedPrograms/RIFT) fleet hub · [LYCEA](https://github.com/CursedPrograms/LYCEA) training school  
-**Robots** — [NORA](https://github.com/CursedPrograms/NORA-Robot-v00) · [MILA](https://github.com/CursedPrograms/MILA-Robot-v00) · [WHIP](https://github.com/CursedPrograms/WHIP-Robot-v00) · [KIDA-00](https://github.com/CursedPrograms/KIDA-Robot-v00) · [KIDA-01](https://github.com/CursedPrograms/KIDA-Robot-v01) · [IDA](https://github.com/CursedPrograms/IDA-Robot-v00) · [ARM](https://github.com/CursedPrograms/ARM-Robot-v01) · [NIKA](https://github.com/CursedPrograms/NIKA-Robot-v00)  
+**Robots** — [NORA](https://github.com/CursedPrograms/NORA-Robot-v00) · [MILA](https://github.com/CursedPrograms/MILA-Robot-v00) · [WHIP](https://github.com/CursedPrograms/WHIP-Robot-v00) · [KIDA-00](https://github.com/CursedPrograms/KIDA-Robot-v00) · [KIDA-01](https://github.com/CursedPrograms/KIDA-Robot-v01) · [IDA](https://github.com/CursedPrograms/IDA-Robot-v00) · [ARM](https://github.com/CursedPrograms/ARM-Robot-v01) · [NIKA](https://github.com/CursedPrograms/NIKA-Robot-v00) · [ARIA](https://github.com/CursedPrograms/ARIA-Robot-v00)  
 **Remotes** — [RITA](https://github.com/CursedPrograms/RITA) handheld remote  
 <!-- DREAM-ECOSYSTEM:END -->
