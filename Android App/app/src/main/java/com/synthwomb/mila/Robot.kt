@@ -1,5 +1,6 @@
 package com.synthwomb.mila
 
+import org.json.JSONObject
 import java.util.Locale
 
 // What MILA takes: the same calls as RITA and her PC controller.
@@ -31,6 +32,16 @@ class Robot(private val http: Http) : RobotApi {
         last = "STOP"
         http.get("/cmd?v=STOP")
     }
+    override fun tiles(s: JSONObject) = listOf(
+        "Front" to Tiles.cm(s.opt("dist")),
+        "Left" to Tiles.cm(s.opt("left")),
+        "Right" to Tiles.cm(s.opt("right")),
+        "Temp" to "${s.optString("temp", "--")}\u00b0C",
+        "Humidity" to "${s.optString("hum", "--")}%",
+        "Speed" to "${s.optString("speed", "--")}%",
+        "Guard" to if (s.optInt("guard") != 0) "WALL" else "clear",
+    )
+
     override val buttons = listOf(
         "WASD" to { http.get("/mode?v=wasd"); Unit },
         "OBSTACLE" to { http.get("/mode?v=obstacle"); Unit },
