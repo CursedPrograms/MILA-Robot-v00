@@ -50,6 +50,10 @@
 
 ---
 
+<div align="center">
+  <img src="images/screenshots/controller.gif" alt="MILA's Python controller, driving a pretend MILA" width="420"/>
+</div>
+
 **Windows controller:** [`builds/MILA-Controller.exe`](builds/MILA-Controller.exe) shows MILA's own web page in a window, so it always matches the page. Source: `scripts/web_controller`.
 
 ## Related Projects (DREAM Robotics Ecosystem)
