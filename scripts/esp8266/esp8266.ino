@@ -142,8 +142,11 @@ String jsonEscape(const String& in) {
 // (the page, /status, /radar, /scan while she's standing still) is always
 // allowed; driving is not.
 const char* const CONTROL_PIN = CONTROL_PIN_SECRET;   // secrets.h
-IPAddress controllerIP(0, 0, 0, 0);
-bool controllerUnlocked = false;
+// Up to MAX_CONTROLLERS at once (her PC controller, her page, a phone), as WHIP's; full, the oldest
+// makes room.
+const uint8_t MAX_CONTROLLERS = 4;
+IPAddress controllerIPs[MAX_CONTROLLERS];
+uint8_t controllerCount = 0, controllerNext = 0;
 
 // === MIND MODE (fleet TODO, section 10) ===
 // Her PC controller's LLM (mind.py) drives her one short move at a time. The mind host - a controller
@@ -477,7 +480,16 @@ void handleRadar() {
 }
 
 bool isController() {
-  return controllerUnlocked && server.client().remoteIP() == controllerIP;
+  const IPAddress ip = server.client().remoteIP();
+  for (uint8_t i = 0; i < controllerCount; i++) if (controllerIPs[i] == ip) return true;
+  return false;
+}
+
+void addController(IPAddress ip) {
+  for (uint8_t i = 0; i < controllerCount; i++) if (controllerIPs[i] == ip) return;
+  if (controllerCount < MAX_CONTROLLERS) { controllerIPs[controllerCount++] = ip; return; }
+  controllerIPs[controllerNext] = ip;
+  controllerNext = (controllerNext + 1) % MAX_CONTROLLERS;
 }
 
 // The wheel lock over WiFi, as NORA's (RIFT's Lock all / Unlock all): locking is free,
@@ -497,11 +509,11 @@ void handleMotorLockOff() {
 
 void handleUnlock() {
   if (server.hasArg("pw") && server.arg("pw") == CONTROL_PIN) {
-    controllerIP = server.client().remoteIP();
-    controllerUnlocked = true;
-    if (server.arg("ctl") == "1") { mindHostIP = controllerIP; mindHostSeen = millis(); }   // her mind's controller
+    const IPAddress ip = server.client().remoteIP();
+    addController(ip);
+    if (server.arg("ctl") == "1") { mindHostIP = ip; mindHostSeen = millis(); }   // her mind's controller
     server.send(200, "application/json",
-                "{\"ok\":true,\"controller\":\"" + controllerIP.toString() + "\"}");
+                "{\"ok\":true,\"controller\":\"" + ip.toString() + "\"}");
   } else {
     server.send(403, "application/json", "{\"ok\":false,\"error\":\"bad pin\"}");
   }
@@ -704,6 +716,15 @@ void handleMind() {
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// Every setting in one number (FNV-1a, as WHIP's): /status carries it, so every page and program
+// sees at once that something changed somewhere
+uint32_t settingsRev() {
+  const String s = currentMode + "," + String(lastSpeed) + "," + String(wheelsLocked ? 1 : 0);
+  uint32_t h = 2166136261u;
+  for (unsigned int i = 0; i < s.length(); i++) { h ^= (uint8_t)s[i]; h *= 16777619u; }
+  return h;
+}
+
 void handleStatus() {
   lastStatusPollMs = millis();
   if (server.arg("ctl") == "1" && mindHostSeen && server.client().remoteIP() == mindHostIP) mindHostSeen = millis();
@@ -724,6 +745,7 @@ void handleStatus() {
   json += "\"fleet\":"   + String(fleetMode ? 1 : 0) + ",";
   json += "\"speed\":"   + String(lastSpeed) + ",";
   json += "\"guard\":"   + String(lastGuard ? 1 : 0) + ",";
+  json += "\"rev\":"     + String(settingsRev()) + ",";
   json += "\"mindHost\":" + String(mindHostAlive() ? 1 : 0) + ",";
   json += "\"mindSteps\":" + String(mindMoveUntil ? (int)((mindMoveUntil - millis() + MIND_STEP_MS - 1) / MIND_STEP_MS) : 0) + ",";
   json += "\"blocked\":"  + String(mindBlocked ? 1 : 0) + ",";
@@ -1184,8 +1206,13 @@ void handleRoot() {
   }
 
   function setMode(m) {
-    mode = m;
     driveFetch('/mode?v=' + m);
+    showMode(m);
+  }
+
+  // The mode on the page, without sending it: poll() calls this when another device changed it
+  function showMode(m) {
+    mode = m;
     ['wasd','tank','obstacle','follow','mind'].forEach(x => {
       document.getElementById('btn-' + x).classList.toggle('active', x === m);
       const panel = document.getElementById('panel-' + x);   // MIND has no panel of its own
@@ -1309,6 +1336,7 @@ void handleRoot() {
         document.getElementById('s-temp').textContent  = d.temp + ' C';
         document.getElementById('s-hum').textContent   = d.hum + ' %';
         document.getElementById('ipAddr').textContent  = d.ip;
+        if (d.mode && d.mode !== mode) showMode(d.mode);
         document.getElementById('s-speed').textContent = d.speed + '%';
 
         document.getElementById('guardBanner').style.display = (d.guard == 1) ? 'block' : 'none';

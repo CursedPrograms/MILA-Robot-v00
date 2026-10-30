@@ -11,6 +11,7 @@ drive forward within 20 cm. Every command she gets is printed.
 """
 
 import math
+import zlib
 import time
 
 from controller_kit import FakeRobot
@@ -82,7 +83,7 @@ class FakeMila(FakeRobot):
         return {"mode": self.mode, "lock": int(self.locked), "cmd": self.last_cmd, "dist": self._distance(),
                 "left": "---" if sl < 0 else str(sl), "right": "---" if sr < 0 else str(sr), "turn": "",
                 "ir": "-", "temp": 22.0, "hum": 45.0, "light": 1, "ip": "127.0.0.1", "fleet": 0,
-                "speed": self.speed, "guard": int(self.guard), "mindHost": int(now - self.mind_host_seen < 5),
+                "speed": self.speed, "guard": int(self.guard), "rev": zlib.crc32(f"{self.mode},{self.speed},{self.locked}".encode()), "mindHost": int(now - self.mind_host_seen < 5),
                 "mindSteps": int(self.mind_until > now) and max(1, int((self.mind_until - now) / MIND_STEP_S + 0.99)),
                 "blocked": int(self.blocked), "ml": self.tracks[0], "mr": self.tracks[1],
                 "scan_l": sl, "scan_f": sf, "scan_r": sr, "scan_ms": int((now - sat) * 1000) if sat else -1}
