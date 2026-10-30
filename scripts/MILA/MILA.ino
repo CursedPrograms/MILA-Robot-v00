@@ -102,6 +102,9 @@ void setSpeedPct(int v) {
 #define IR_MODE_WASD 0x0      // "1"
 #define IR_MODE_TANK 0x1      // "2"
 #define IR_MODE_OBSTACLE 0x2  // "3"
+#define IR_FOLLOW 0x3         // "4" (a guess, as WHIP's "3"-"7": 1 = 0x0, 2 = 0x1, read it with ir_diagnostic)
+#define IR_HELLO 0x4          // "5"
+#define IR_DANCE 0x5          // "6"
 
 #define IR_RED 0x25     // tank: left track forward
 #define IR_GREEN 0x26   // tank: left track backward
@@ -225,7 +228,8 @@ const int cmySeq[3][3] = {
 // === MODE & STATE ===
 enum DriveMode { MODE_WASD,
                  MODE_TANK,
-                 MODE_OBSTACLE };
+                 MODE_OBSTACLE,
+                 MODE_FOLLOW };
 DriveMode driveMode = MODE_WASD;  // WASD is the boot default
 
 enum RobotState { MOVING_FORWARD,
@@ -315,6 +319,12 @@ void loop() {
   checkSerial();
   updateEnvSensor();
   updateLightSensor();
+
+  if (driveMode == MODE_FOLLOW) {
+    followHand();
+    updateLighting();
+    return;
+  }
 
   if (driveMode != MODE_OBSTACLE) {
     checkManualGuard();
@@ -619,6 +629,18 @@ void runIRCommand(uint8_t cmd) {
       resetManualState();
       break;
 
+    case IR_FOLLOW:
+      setFollow();
+      break;
+
+    case IR_HELLO:
+      if (driveMode == MODE_WASD || driveMode == MODE_TANK) waveHello();
+      break;
+
+    case IR_DANCE:
+      if (driveMode == MODE_WASD || driveMode == MODE_TANK) dance();
+      break;
+
     case IR_OK:
       cycleSpeed();
       break;
@@ -762,6 +784,76 @@ void scanAround() {
   delay(SCAN_SETTLE_MS);                           // settled ahead again before the guard pings
 }
 
+// ---- FOLLOW: keep a hand 30 cm from her sonar (WHIP's follow-me) ----
+// Short pulses: her tracks are full or nothing, so running on would overshoot.
+const long FOLLOW_CM = 30;
+const long FOLLOW_DEADBAND_CM = 4;   // close enough: stand
+const long FOLLOW_LOST_CM = 80;      // nothing nearer than this: nobody to follow, stand
+const int FOLLOW_PULSE_MS = 120;
+
+void setFollow() {
+  driveMode = MODE_FOLLOW;
+  resetManualState();
+  myServo.write(90);
+}
+
+void followHand() {
+  static unsigned long lastPing = 0;
+  if (millis() - lastPing < GUARD_POLL_MS) return;
+  lastPing = millis();
+
+  lastDist = getDistance();
+  Serial.print("DIST:");
+  Serial.println(lastDist);
+  const long e = lastDist - FOLLOW_CM;
+  if (lastDist <= 0 || lastDist > FOLLOW_LOST_CM || labs(e) <= FOLLOW_DEADBAND_CM) return;
+
+  if (e > 0) forward();
+  else backward();
+  robotState = MOVING_FORWARD;
+  delay(FOLLOW_PULSE_MS);
+  stopMotors();
+  robotState = STOPPED;
+}
+
+// ---- HELLO and DANCE: on the spot, so there's no wall to hit ----
+// Anything arriving from the ESP (STOP, a mode) cuts them short.
+void waveHello() {
+  stopMotors();
+  robotState = STOPPED;
+  beep(1200, 80);
+  beep(1600, 120);
+  for (int i = 0; i < 3 && !Serial.available(); i++) {   // shakes her sonar head
+    setColor(0, 255, 255);
+    myServo.write(60);
+    delay(220);
+    setColor(255, 0, 255);
+    myServo.write(120);
+    delay(220);
+  }
+  myServo.write(90);
+  delay(200);
+}
+
+void dance() {
+  stopMotors();
+  for (int i = 0; i < 8 && !Serial.available(); i++) {   // a beat: left, right, her head the other way
+    const bool left = i % 2 == 0;
+    setColor(cmySeq[i % 3][0], cmySeq[i % 3][1], cmySeq[i % 3][2]);
+    myServo.write(left ? 130 : 50);
+    if (left) turnLeft();
+    else turnRight();
+    robotState = TURNING;
+    beep(left ? 880 : 1320, 100);
+    delay(160);
+    stopMotors();
+    delay(60);
+  }
+  robotState = STOPPED;
+  myServo.write(90);
+  delay(200);
+}
+
 // =====================
 void checkSerial() {
   if (!Serial.available()) return;
@@ -778,6 +870,9 @@ void checkSerial() {
   } else if (cmd == "OBSTACLE") {
     driveMode = MODE_OBSTACLE;
     resetManualState();
+
+  } else if (cmd == "FOLLOW") {
+    setFollow();
 
   } else if (cmd == "TANK") {
     driveMode = MODE_TANK;
@@ -805,8 +900,14 @@ void checkSerial() {
   } else if (cmd == "UNLOCK") {     // its /motorlockOff, after it checked her PIN
     setLinkLocked(false);
 
-  } else if (driveMode == MODE_OBSTACLE) {
+  } else if (driveMode == MODE_OBSTACLE || driveMode == MODE_FOLLOW) {
     return;
+
+  } else if (cmd == "HELLO") {
+    waveHello();
+
+  } else if (cmd == "DANCE") {
+    dance();
 
   } else if (cmd == "FORWARD") {
     clearGuard();

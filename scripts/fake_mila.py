@@ -53,6 +53,9 @@ class FakeMila(FakeRobot):
             self._set_tracks(0, 0)
         if self.mode == "obstacle":
             self.tracks = [-1, 1] if self._distance() < 30 else [1, 1]
+        if self.mode == "follow":      # keeps a hand 30 cm away; nothing within 80 cm: stands
+            d = self._distance()
+            self.tracks = [0, 0] if d > 80 or abs(d - 30) <= 4 else [1, 1] if d > 30 else [-1, -1]
         l, r = (0, 0) if self.locked else self.tracks
         fwd, turn = (l + r) / 2, (r - l) / 2
         if fwd > 0 and self._distance() < GUARD_CM:   # her UNO's guard
@@ -129,9 +132,11 @@ class FakeMila(FakeRobot):
                 self.speed = int(v[6:]) if v.startswith("SPEED:") else {100: 75, 75: 50, 50: 25, 25: 100}.get(self.speed, 100)
                 self.log(f"speed {self.speed}%")
                 return 200, "OK"
-            if self.mode == "obstacle" or (self.mode == "mind" and v != "STOP"):
+            if self.mode in ("obstacle", "follow") or (self.mode == "mind" and v != "STOP"):
                 return 200, "IGNORED"
             self.last_cmd = v
+            if v in ("HELLO", "DANCE"):
+                self._set_tracks(0, 0, "waves hello" if v == "HELLO" else "dances on the spot")
             if v in TRACKS:
                 self.guard = False
                 self._set_tracks(*TRACKS[v])

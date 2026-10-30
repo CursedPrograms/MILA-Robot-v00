@@ -15,6 +15,8 @@ TITLE = "MILA - controls"
 KEYMAP = [
     ("Keyboard: web page and every desktop controller", [
         ("1 / 2 / 3", "WASD / TANK / OBSTACLE mode"),
+        ("F", "FOLLOW mode: she keeps your hand 30 cm from her sonar (Python controller; a button on her web page)"),
+        ("H / N", "HELLO / DANCE, on the spot, in WASD or TANK (Python controller; buttons on her web page)"),
         ("W / Up, S / Down", "forward / back (WASD mode, hold)"),
         ("A / Left, D / Right", "turn left / right (WASD mode, hold)"),
         ("W+A, W+D, S+A, S+D", "curve: one track drives (Python controller; the stick too)"),
@@ -39,6 +41,7 @@ KEYMAP = [
     ]),
     ("Her IR remote", [
         ("1 / 2 / 3", "WASD / TANK / OBSTACLE mode"),
+        ("4 / 5 / 6", "FOLLOW mode / HELLO / DANCE (codes guessed: 0x3, 0x4, 0x5)"),
         ("Up / Down / Left / Right", "drive (WASD mode, hold)"),
         ("Red / Green", "left track forward / back (TANK mode)"),
         ("Yellow / Blue", "right track forward / back (TANK mode)"),

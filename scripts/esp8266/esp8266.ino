@@ -46,7 +46,7 @@ void fleetNearLoop() {
   strncpy(b.name, "MILA", sizeof(b.name) - 1);
   b.seq = fleetSeq++;
   // driving herself (obstacle mode), driven by you, or standing still
-  const char* say = (currentMode == "obstacle" || currentMode == "mind") ? FLEET_BF_GO : lastCommand != "STOP" ? FLEET_BF_HAND : FLEET_BF_PARK;
+  const char* say = (currentMode == "obstacle" || currentMode == "follow" || currentMode == "mind") ? FLEET_BF_GO : lastCommand != "STOP" ? FLEET_BF_HAND : FLEET_BF_PARK;
   strncpy(b.bf, say, sizeof(b.bf) - 1);
   esp_now_send(fleetBroadcast, (uint8_t*)&b, sizeof(b));
 }
@@ -617,7 +617,7 @@ void handleCmd() {
       return;
     }
   }
-  if (currentMode == "obstacle" || (currentMode == "mind" && server.arg("v") != "STOP")) {
+  if (currentMode == "obstacle" || currentMode == "follow" || (currentMode == "mind" && server.arg("v") != "STOP")) {
     server.send(200, "text/plain", "IGNORED");   // she's driving herself (STOP always gets through)
     return;
   }
@@ -674,6 +674,7 @@ void handleMode() {
     currentMode = server.arg("v");
     mindMoveUntil = 0;
     if      (currentMode == "obstacle") Serial.println("OBSTACLE");
+    else if (currentMode == "follow")   Serial.println("FOLLOW");
     else if (currentMode == "tank")     Serial.println("TANK");
     else                                Serial.println("WASD");
     server.send(200, "text/plain", "OK");
@@ -1024,7 +1025,12 @@ void handleRoot() {
     <button class="mode-btn active" id="btn-wasd"     onclick="setMode('wasd')">🎮 WASD</button>
     <button class="mode-btn"        id="btn-tank"     onclick="setMode('tank')">🕹 TANK</button>
     <button class="mode-btn"        id="btn-obstacle" onclick="setMode('obstacle')">⚡ OBSTACLE</button>
+    <button class="mode-btn"        id="btn-follow"   onclick="setMode('follow')" title="she keeps your hand 30 cm from her sonar">✋ FOLLOW</button>
     <button class="mode-btn"        id="btn-mind"     onclick="setMode('mind')" style="display:none" title="the LLM on her PC controller drives her">🧠 MIND</button>
+  </div>
+  <div class="mode-row">
+    <button class="mode-btn" onclick="sendCmd('HELLO')" title="she shakes her sonar head and beeps">👋 HELLO</button>
+    <button class="mode-btn" onclick="sendCmd('DANCE')" title="on the spot, in WASD or TANK">💃 DANCE</button>
   </div>
 
   <div class="speed-row">
@@ -1180,7 +1186,7 @@ void handleRoot() {
   function setMode(m) {
     mode = m;
     driveFetch('/mode?v=' + m);
-    ['wasd','tank','obstacle','mind'].forEach(x => {
+    ['wasd','tank','obstacle','follow','mind'].forEach(x => {
       document.getElementById('btn-' + x).classList.toggle('active', x === m);
       const panel = document.getElementById('panel-' + x);   // MIND has no panel of its own
       if (panel) panel.classList.toggle('active', x === m);
@@ -1190,7 +1196,7 @@ void handleRoot() {
 
   function ev(e, cmd) {
     e.preventDefault();
-    if (mode === 'obstacle') return;
+    if (mode === 'obstacle' || mode === 'follow') return;
     sendCmd(cmd);
     // Visual feedback
     const el = e.currentTarget;
@@ -1212,7 +1218,7 @@ void handleRoot() {
   const tankKeyMap = { q:'L_FWD', a:'L_BWD', e:'R_FWD', d:'R_BWD' };
   const held = {};
   document.addEventListener('keydown', e => {
-    if (held[e.key] || mode === 'obstacle') return;
+    if (held[e.key] || mode === 'obstacle' || mode === 'follow') return;
     held[e.key] = true;
     const k = e.key.toLowerCase();
     const cmd = mode === 'tank' ? tankKeyMap[k] : wasdKeyMap[k];
