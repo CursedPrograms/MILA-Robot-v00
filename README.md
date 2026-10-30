@@ -1,33 +1,29 @@
 <p align="center"><img src="images/avatar_round.png" width="160" alt="MILA"></p>
 
-[![Twitter: @NorowaretaGemu](https://img.shields.io/badge/X-@NorowaretaGemu-blue.svg?style=flat)](https://x.com/NorowaretaGemu)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<h1 align="center">MILA</h1>
+<h3 align="center">Miniature Integrated Logic Automaton</h3>
+<p align="center"><i>A DREAM Robotics Agent</i></p>
+
+<div align="center">
+
+[![Twitter: @NorowaretaGemu](https://img.shields.io/badge/X-@NorowaretaGemu-blue.svg?style=flat)](https://x.com/NorowaretaGemu) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+</div>
 
 <div align="center">
   <a href="https://ko-fi.com/cursedentertainment">
-    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi" style="width: 20%;"/>
+    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi" width="180"/>
   </a>
 </div>
+
 <div align="center">
   <img alt="C++" src="https://img.shields.io/badge/c++%20-%23323330.svg?&style=for-the-badge&logo=c%2B%2B&logoColor=white"/>
-</div>
-
-<div align="center">
   <img alt="Arduino" src="https://img.shields.io/badge/-Arduino-323330?style=for-the-badge&logo=arduino&logoColor=white"/>
-</div>
-
-<div align="center">
   <img alt="Git" src="https://img.shields.io/badge/git%20-%23323330.svg?&style=for-the-badge&logo=git&logoColor=white"/>
   <img alt="Shell" src="https://img.shields.io/badge/Shell-%23323330.svg?&style=for-the-badge&logo=gnu-bash&logoColor=white"/>
 </div>
 
-
-
 ---
-
-# MILA
-## MINIATURE INTEGRATED LOGIC AUTOMATON
-### A DREAM Robotics Agent
 
 - Robot Type: Tank
 
@@ -56,7 +52,10 @@
 
 **Windows controller:** [`builds/MILA-Controller.exe`](builds/MILA-Controller.exe) shows MILA's own web page in a window, so it always matches the page. Source: `scripts/web_controller`.
 
-## Related Projects (DREAM Robotics Ecosystem)
+---
+
+## Related Projects
+
 
 <table>
   <tr>
@@ -133,70 +132,6 @@ MILA is a small tank-chassis robot you can drive over WiFi. It hosts its own web
 > **Speed control and the servo share a timer.** ENA and ENB are on pins 9 and 10, which the Servo library takes over (Timer1). At 100 % speed the motors are switched fully on and work. At 75 / 50 / 25 % the PWM is lost, so the motors may barely move or stop, and the servo can twitch. Fix it by swapping four wires and the matching constants in `MILA.ino`: **ENA ↔ IN2** (ENA → 5, IN2 → 9) and **ENB ↔ IN3** (ENB → 6, IN3 → 10). Pins 5 and 6 are Timer0 PWM, which nothing else uses.
 
 ---
-
-## Quick start
-
-### DIP switches (UNO + WiFi R3 board)
-
-The board's 8 DIP switches choose what the USB port and the two chips are connected to. Switch 8 is unused.
-
-| What you're doing | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
-|---|---|---|---|---|---|---|---|---|
-| **Running MILA** (Arduino ↔ ESP8266) | ON | ON | off | off | off | off | off | off |
-| **Upload `scripts/MILA`** (USB → ATmega328) | off | off | ON | ON | off | off | off | off |
-| **Upload `scripts/esp8266`** (USB → ESP8266, flash mode) | off | off | off | off | ON | ON | ON | off |
-| **ESP8266 Serial Monitor** (USB ↔ ESP8266) | off | off | off | off | ON | ON | off | off |
-| USB ↔ ATmega328 ↔ ESP8266 all linked | ON | ON | ON | ON | off | off | off | off |
-
-1. Set **3 + 4 ON** and upload `scripts/MILA`.
-2. Set **5 + 6 + 7 ON** and upload `scripts/esp8266` (press reset if the upload won't start).
-3. Set **1 + 2 ON**, everything else off, and power-cycle to drive her.
-
-In the running setting the Arduino's serial goes to the ESP, not USB, so the Serial Monitor shows nothing. Use 3 + 4 to read her `DIST:` / `IR:` lines over USB.
-
-> [!NOTE]
-> Check this against the table printed on your board, as some clones differ slightly.
-
-### Flash and connect
-
-The ESP8266's WiFi passwords and her control PIN are in `scripts/esp8266/secrets.h` (the fleet's: RIFT and NORA `mmvbkbak`, PIN `1234`; `secrets.example.h` shows the layout). Flash the firmware from `scripts/esp8266` and `scripts/MILA` with the Arduino IDE (set the DIP switches above first):
-
-| Sketch | Board (Tools > Board) | Needs |
-| :--- | :--- | :--- |
-| `scripts/MILA` | Arduino UNO | Libraries: **IRremote** (4.x), **Servo** |
-| `scripts/esp8266` | Generic ESP8266 Module (Flash Size 4MB, FS 2MB OTA) | The **esp8266** boards: add `https://arduino.esp8266.com/stable/package_esp8266com_index.json` under File > Preferences > Additional boards manager URLs, then install *esp8266* in the Boards Manager |
-
-Then power the robot on, and join her WiFi network. Then open the dashboard in a browser, or run a desktop controller:
-
-```
-./run.sh                      # macOS / Linux / Git Bash
-run.bat                       # Windows (cmd)
-.\run.ps1                     # Windows (PowerShell)
-
-./run.sh --host 192.168.4.1 --port 5010
-./run.sh --emulate            # a pretend MILA on this PC (scripts/fake_mila.py), no robot
-```
-
-The Python controller (`run.*`, `scripts/mila_controller.py`):
-- **Two keys curve her**: W+A drives only her right track, so she arcs forward-left (W+D, S+A, S+D the same
-  way), and so does the stick half-way round. Her UNO has no speed control yet (section 12 of the fleet
-  TODO), so a curve is one track on, the other off.
-- **Driving takes over**: driving in OBSTACLE puts her in WASD, and she stops when you let go. **STOP**
-  (Space, the pad's A) works in any mode, TANK too.
-- **Settings stick**: mode and speed are sent again until her `/status` says so.
-- **EMULATE**: a pretend MILA in a pretend room: her sonar reading drops as she drives at a wall, and her
-  UNO's guard stops her within 20 cm. **VOICE**: she talks through this PC (Zira, quick and cheeky): modes,
-  walls, her wheel lock, speed. **THEME**: DEFAULT, LIGHT or CUSTOM, from `colour_scheme.xml`.
-- Pads: Xbox, PlayStation and Switch pads all have the same buttons (`gamepad_drive.py`, SDL's controller
-  layer). Her MIND log: `~/.robot_minds/logs/MILA-<date>.log`.
-
-If MILA joined the RIFT or NORA network (fleet mode) she won't be at `192.168.4.1`: RIFT's dashboard lists her address. Press **SCAN NETWORK** in the C++, C# or F# controller, or start it with `--host auto`.
-
-### Talking (in Brainfuck)
-The robots talk in **Brainfuck**: every phrase is a Brainfuck program that prints its words (hello is `++++++++[>+++++++++++++<-]>.+.` → `hi`), and a robot says it by beeping the program on its buzzer, one tone per symbol, pitched to its own voice. The phrasebook (`talk_bf.h`) is generated by RIFT's `Fleet/brainfuck_talk.py`: phrases 0–6 (hello, how are you, happy, curious, sleepy, let's play, bye) and their replies 7–13. [RIFT](https://github.com/CursedPrograms/RIFT) runs the conversations between robots over WiFi and logs them on its dashboard; it asks MILA to speak with `GET /chirp?u=<0-13>`. Her UNO plays `TALK:<u>` (from the ESP8266) through her own beep(), a little higher than NORA, and respects MUTE; she only talks while stopped outside OBSTACLE mode. The ESP8266 forwards `/chirp` to the UNO and registers `talk:5010`, so RIFT includes her in the conversations.
-
-### Driven by NORA (fleet IR link)
-[NORA](https://github.com/CursedPrograms/NORA-Robot-v00) can drive MILA through her IR transmitter, from her web page, Python controller or Bluetooth. The frames are Samsung-format IR at address `0x0DA2`, with the fleet link's commands: `0x48` forward, `0x49` back, `0x4A` left, `0x4B` right, `0x4C` stop, `0x4D` obstacle mode, `0x4E` manual, `0x4F` speed. Driving switches her into WASD mode; `stop` also leaves OBSTACLE mode, and `speed` cycles the speed like the OK button. She stops once the link has been quiet for 500 ms. Link frames print as `LINK:0x..`.
 
 ## Desktop controllers
 
@@ -276,6 +211,74 @@ Every key, gamepad button and remote button. The same list opens in its own wind
 
 **The C++, C# and F# controllers** also have a proximity radar, live distance / temperature / humidity graphs with CSV export, an exact speed slider, network discovery (`--host auto`), remembered host / port / mode, and Xbox gamepad support (stick or D-pad to drive, triggers for speed, `A` to stop, bumpers to change mode).
 
+---
+
+## Quick start
+
+### DIP switches (UNO + WiFi R3 board)
+
+The board's 8 DIP switches choose what the USB port and the two chips are connected to. Switch 8 is unused.
+
+| What you're doing | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| **Running MILA** (Arduino ↔ ESP8266) | ON | ON | off | off | off | off | off | off |
+| **Upload `scripts/MILA`** (USB → ATmega328) | off | off | ON | ON | off | off | off | off |
+| **Upload `scripts/esp8266`** (USB → ESP8266, flash mode) | off | off | off | off | ON | ON | ON | off |
+| **ESP8266 Serial Monitor** (USB ↔ ESP8266) | off | off | off | off | ON | ON | off | off |
+| USB ↔ ATmega328 ↔ ESP8266 all linked | ON | ON | ON | ON | off | off | off | off |
+
+1. Set **3 + 4 ON** and upload `scripts/MILA`.
+2. Set **5 + 6 + 7 ON** and upload `scripts/esp8266` (press reset if the upload won't start).
+3. Set **1 + 2 ON**, everything else off, and power-cycle to drive her.
+
+In the running setting the Arduino's serial goes to the ESP, not USB, so the Serial Monitor shows nothing. Use 3 + 4 to read her `DIST:` / `IR:` lines over USB.
+
+> [!NOTE]
+> Check this against the table printed on your board, as some clones differ slightly.
+
+### Flash and connect
+
+The ESP8266's WiFi passwords and her control PIN are in `scripts/esp8266/secrets.h` (the fleet's: RIFT and NORA `mmvbkbak`, PIN `1234`; `secrets.example.h` shows the layout). Flash the firmware from `scripts/esp8266` and `scripts/MILA` with the Arduino IDE (set the DIP switches above first):
+
+| Sketch | Board (Tools > Board) | Needs |
+| :--- | :--- | :--- |
+| `scripts/MILA` | Arduino UNO | Libraries: **IRremote** (4.x), **Servo** |
+| `scripts/esp8266` | Generic ESP8266 Module (Flash Size 4MB, FS 2MB OTA) | The **esp8266** boards: add `https://arduino.esp8266.com/stable/package_esp8266com_index.json` under File > Preferences > Additional boards manager URLs, then install *esp8266* in the Boards Manager |
+
+Then power the robot on, and join her WiFi network. Then open the dashboard in a browser, or run a desktop controller:
+
+```
+./run.sh                      # macOS / Linux / Git Bash
+run.bat                       # Windows (cmd)
+.\run.ps1                     # Windows (PowerShell)
+
+./run.sh --host 192.168.4.1 --port 5010
+./run.sh --emulate            # a pretend MILA on this PC (scripts/fake_mila.py), no robot
+```
+
+The Python controller (`run.*`, `scripts/mila_controller.py`):
+- **Two keys curve her**: W+A drives only her right track, so she arcs forward-left (W+D, S+A, S+D the same
+  way), and so does the stick half-way round. Her UNO has no speed control yet (section 12 of the fleet
+  TODO), so a curve is one track on, the other off.
+- **Driving takes over**: driving in OBSTACLE puts her in WASD, and she stops when you let go. **STOP**
+  (Space, the pad's A) works in any mode, TANK too.
+- **Settings stick**: mode and speed are sent again until her `/status` says so.
+- **EMULATE**: a pretend MILA in a pretend room: her sonar reading drops as she drives at a wall, and her
+  UNO's guard stops her within 20 cm. **VOICE**: she talks through this PC (Zira, quick and cheeky): modes,
+  walls, her wheel lock, speed. **THEME**: DEFAULT, LIGHT or CUSTOM, from `colour_scheme.xml`.
+- Pads: Xbox, PlayStation and Switch pads all have the same buttons (`gamepad_drive.py`, SDL's controller
+  layer). Her MIND log: `~/.robot_minds/logs/MILA-<date>.log`.
+
+If MILA joined the RIFT or NORA network (fleet mode) she won't be at `192.168.4.1`: RIFT's dashboard lists her address. Press **SCAN NETWORK** in the C++, C# or F# controller, or start it with `--host auto`.
+
+### Talking (in Brainfuck)
+The robots talk in **Brainfuck**: every phrase is a Brainfuck program that prints its words (hello is `++++++++[>+++++++++++++<-]>.+.` → `hi`), and a robot says it by beeping the program on its buzzer, one tone per symbol, pitched to its own voice. The phrasebook (`talk_bf.h`) is generated by RIFT's `Fleet/brainfuck_talk.py`: phrases 0–6 (hello, how are you, happy, curious, sleepy, let's play, bye) and their replies 7–13. [RIFT](https://github.com/CursedPrograms/RIFT) runs the conversations between robots over WiFi and logs them on its dashboard; it asks MILA to speak with `GET /chirp?u=<0-13>`. Her UNO plays `TALK:<u>` (from the ESP8266) through her own beep(), a little higher than NORA, and respects MUTE; she only talks while stopped outside OBSTACLE mode. The ESP8266 forwards `/chirp` to the UNO and registers `talk:5010`, so RIFT includes her in the conversations.
+
+### Driven by NORA (fleet IR link)
+[NORA](https://github.com/CursedPrograms/NORA-Robot-v00) can drive MILA through her IR transmitter, from her web page, Python controller or Bluetooth. The frames are Samsung-format IR at address `0x0DA2`, with the fleet link's commands: `0x48` forward, `0x49` back, `0x4A` left, `0x4B` right, `0x4C` stop, `0x4D` obstacle mode, `0x4E` manual, `0x4F` speed. Driving switches her into WASD mode; `stop` also leaves OBSTACLE mode, and `speed` cycles the speed like the OK button. She stops once the link has been quiet for 500 ms. Link frames print as `LINK:0x..`.
+
+---
+
 ## Analyzing a session (Fortran)
 
 The **EXPORT CSV** button saves the whole session to `Documents\MILA-telemetry`. `scripts/fortran/telemetry_stats.f90` turns an export into a report: sample rate, time in each drive mode, per-sensor min / max / mean / standard deviation, outliers (beyond 3σ), connection gaps and close calls (front distance under 20 cm). It needs `gfortran` and picks the newest export by default:
@@ -284,6 +287,8 @@ The **EXPORT CSV** button saves the whole session to `Documents\MILA-telemetry`.
 scripts/run-fortran.sh              # or run-fortran.bat / run-fortran.ps1
 scripts/run-fortran.sh my_run.csv
 ```
+
+---
 
 ## Training data: teach MILA to drive herself
 
@@ -304,6 +309,8 @@ Columns: `session,t_s,split,mode,mode_id,dist,dist_valid,d_dist,dist_avg5,dist_m
 
 **Reflash both boards** (`scripts/MILA` and `scripts/esp8266`) to get the motor columns. Exports from older firmware still work, but their labels come from the last web command only, so IR driving is invisible in them. The same reflash also makes the front sensor sample continuously in manual modes, so the distance no longer goes stale while you are stopped or turning.
 
+---
+
 ## Testing without a robot
 
 `scripts/sim` holds a mock MILA that serves the same endpoints as the firmware with simulated sensor data:
@@ -313,7 +320,9 @@ scripts/run-sim.sh
 scripts/run-cpp.sh --host 127.0.0.1
 ```
 
-## 📡 Who's nearby (ESP-NOW + Bluetooth LE)
+---
+
+## Who's nearby (ESP-NOW + Bluetooth LE)
 
 Every robot sends a small **"I'm here"** beacon twice a second and listens for the others'. From the **signal strength** it knows roughly how close each one is, and from how that changes over time whether it's **coming closer, steady or leaving**:
 
@@ -357,18 +366,17 @@ MILA's ESP8266 **sends** the beacon over ESP-NOW, with what she's doing said in 
 
 ---
 
-<br>
-<div align="center">© Cursed Entertainment 2026</div>
-<br>
+<div align="center">&copy; Cursed Entertainment 2026</div>
+
 <div align="center">
-  <a href="https://cursed-entertainment.itch.io/" target="_blank">
-    <img src="https://github.com/CursedPrograms/cursedentertainment/raw/main/images/logos/logo-wide-grey.png" alt="CursedEntertainment Logo" style="width:250px;">
+  <a href="https://cursed-entertainment.itch.io/">
+    <img src="https://github.com/CursedPrograms/cursedentertainment/raw/main/images/logos/logo-wide-grey.png" alt="Cursed Entertainment" width="250"/>
   </a>
 </div>
-<br>
+
 <div align="center">
-  <a href="https://github.com/SynthWomb" target="_blank">
-    <img src="https://github.com/SynthWomb/synth.womb/blob/main/logos/synthwomb07.png" alt="SynthWomb" style="width:200px;"/>
+  <a href="https://github.com/SynthWomb">
+    <img src="https://github.com/SynthWomb/synth.womb/blob/main/logos/synthwomb07.png?raw=true" alt="SynthWomb" width="200"/>
   </a>
 </div>
 
