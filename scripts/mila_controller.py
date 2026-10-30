@@ -144,6 +144,7 @@ SETTINGS = kit.Settings()
 apply_theme(SETTINGS.colours())
 
 W, H = 420, 720
+VIEW_W = 200      # the column on the right: her from above
 
 # ----------------------------------------------------------------------------
 # Her mind (mind.py): M switches MIND mode on and off, only on a PC that can run it
@@ -296,7 +297,7 @@ def main():
     threading.Thread(target=check_mind, daemon=True).start()
 
     pygame.init()
-    screen = pygame.display.set_mode((W, H))
+    screen = pygame.display.set_mode((W + VIEW_W, H))
     pygame.display.set_caption("MILA Control")
     try:  # window icon: the robot's avatar
         pygame.display.set_icon(pygame.image.load(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "images", "mila-icon.png")))
@@ -598,6 +599,14 @@ def main():
         elif not mind_state["capable"]:
             screen.blit(f_sml.render(kit.fit(f"mind: {mind_state['why']}", f_sml, W - 24), True, DIM), (12, H - 40))
 
+        def _cm(v):       # /status's left / right are text ("---" before the first look)
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return -1
+        kit.draw_top_view(screen, pygame.Rect(W, 100, VIEW_W - 12, 260), SETTINGS.theme, SETTINGS.get("custom"), f_sml, "tank",
+                          [t.get("ml", 0) or 0, t.get("mr", 0) or 0],
+                          [(0, _cm(t.get("dist"))), (60, _cm(t.get("left"))), (-60, _cm(t.get("right")))])
         pygame.display.flip()
         clock.tick(60)
 
