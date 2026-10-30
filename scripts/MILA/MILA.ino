@@ -102,7 +102,7 @@ void setSpeedPct(int v) {
 #define IR_MODE_WASD 0x0      // "1"
 #define IR_MODE_TANK 0x1      // "2"
 #define IR_MODE_OBSTACLE 0x2  // "3"
-#define IR_FOLLOW 0x3         // "4" (a guess, as WHIP's "3"-"7": 1 = 0x0, 2 = 0x1, read it with ir_diagnostic)
+#define IR_FOLLOW 0x3         // "4" (a guess, as WHIP's "3"-"7": 1 = 0x0, 2 = 0x1, read it with NINA's IR reader)
 #define IR_HELLO 0x4          // "5"
 #define IR_DANCE 0x5          // "6"
 
