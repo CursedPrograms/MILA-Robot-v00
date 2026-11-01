@@ -1048,6 +1048,7 @@ void handleRoot() {
     <button class="mode-btn"        id="btn-tank"     onclick="setMode('tank')">🕹 TANK</button>
     <button class="mode-btn"        id="btn-obstacle" onclick="setMode('obstacle')">⚡ OBSTACLE</button>
     <button class="mode-btn"        id="btn-follow"   onclick="setMode('follow')" title="she keeps your hand 30 cm from her sonar">✋ FOLLOW</button>
+    <button class="mode-btn"        onclick="stopNow()" title="stops her in any mode">&#9632; STOP</button>
     <button class="mode-btn"        id="btn-mind"     onclick="setMode('mind')" style="display:none" title="the LLM on her PC controller drives her">🧠 MIND</button>
   </div>
   <div class="mode-row">
@@ -1203,6 +1204,12 @@ void handleRoot() {
   function driveFetch(url) {
     return fetch(url).then(r => { if (r.status === 403) showLock(); return r; })
                      .catch(() => {});
+  }
+
+  // In OBSTACLE and FOLLOW the bridge ignores STOP and the pad is hidden: out of those first
+  function stopNow() {
+    if (mode === 'obstacle' || mode === 'follow') setMode('wasd');
+    sendCmd('STOP');
   }
 
   function setMode(m) {
