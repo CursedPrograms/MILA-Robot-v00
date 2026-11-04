@@ -382,6 +382,10 @@ MILA's ESP8266 **sends** the beacon over ESP-NOW, with what she's doing said in 
 
 ---
 
+## WiFi signal
+
+Her `/status` has `wifi_rssi` (her signal, 0 while she hosts), which [RITA](https://github.com/CursedPrograms/RITA)'s STATS shows. Her ESP8266 has no Bluetooth: Bluetooth controllers reach her through NORA's IR link.
+
 <!-- DREAM-ECOSYSTEM:START -->
 ## The DREAM Robotics ecosystem
 
