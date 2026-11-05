@@ -56,7 +56,6 @@
 
 ## Related Projects
 
-
 <table>
   <tr>
     <td align="center"><a href="https://github.com/CursedPrograms/ARIA-Robot-v00"><img src="https://raw.githubusercontent.com/CursedPrograms/ARIA-Robot-v00/main/images/avatar_round.png" width="72" alt="ARIA"><br>ARIA</a></td>
@@ -81,19 +80,19 @@
 
 ## Overview
 
-**Website: <https://cursedprograms.github.io/MILA/>**
+**Website: <https://cursedprograms.github.io/MILA-Robot-v00/>**
 
-MILA is a small tank-chassis robot you can drive over WiFi. It hosts its own web dashboard, streams live sensor data, and can steer itself around obstacles.
+MILA is a small tank-chassis robot you can drive over WiFi. She hosts her own web dashboard, streams live sensor data, and can steer itself around obstacles.
 
 - **Drive modes:** WASD (car-style), TANK (independent tracks) and OBSTACLE (autonomous).
 - **Live telemetry:** front, left and right distance, temperature, humidity and the last IR remote key.
 - **WiFi dashboard:** served by the ESP8266 on port `5010`. She joins the fleet's "RIFT" network first, NORA's "NORA" network if there's no RIFT, and hosts her own "MILA" access point at `192.168.4.1` if neither is around - and keeps looking, so she moves to RIFT (or NORA) as soon as it appears.
-- **Safety:** a collision guard force-stops the robot in manual modes, and a watchdog stops it if the connection drops.
+- **Safety:** a collision guard force-stops her in manual modes, and a watchdog stops her if the connection drops.
 - **Speed:** cycle 100 / 75 / 50 / 25 % from the IR remote, or set an exact value from the dashboard slider (see the pinout warning below).
 - **MIND mode:** the LLM on her PC controller drives her, one short move at a time: she looks (her distances, or a SCAN left / ahead / right), thinks out loud on screen, says what she's doing in her own voice (playful and quick), moves, and remembers. **M** on the Python controller, or MIND on her dashboard while it's connected. Only on an x86 PC with 8 GB+ RAM and a GTX 1050 or better.
 - **Ticks near walls:** driving forward, the buzzer ticks faster as a wall gets close, like a parking sensor (ticks, not a tone: the buzzer shares a timer with the IR receiver).
 - **Lights in the dark:** driving forward in the dark (the light sensor), her LED goes white instead of blue to light the way.
-- **Android app (`Android App/`, package `com.synthwomb`): FIND gets her address from the fleet list, or type it in. Hold the stick to drive, let go to stop, and her modes, HELLO, DANCE, speed and the wheel lock are buttons. Build it with `gradlew assembleDebug`.**
+- **Android app (`Android App/`, package `com.synthwomb`): FIND gets her address from the fleet list, or type it in. Hold the stick to drive, let go to stop, and her modes, HELLO, DANCE, speed and the wheel lock are buttons. Build it with `gradlew assembleDebug`. Install: [`MILA-debug-2026-10-30.apk`](Android%20App/apk/MILA-debug-2026-10-30.apk).**
 - **FOLLOW:** she keeps your hand 30 cm from her sonar, in short pulses. A button on her dashboard, **F** on the Python controller, 4 on the remote (a guessed code).
 - **HELLO and DANCE:** on the spot, in WASD or TANK: her sonar head shakes and she beeps. Buttons on her dashboard, **H** and **N** on the Python controller, 5 and 6 on the remote (guessed codes). Anything from her ESP cuts them short.
 - **Live view:** her Python controller draws her from above, tracks turning, sonar reaching out.
@@ -322,6 +321,14 @@ scripts/run-cpp.sh --host 127.0.0.1
 
 ---
 
+## WiFi signal
+
+Her `/status` has `wifi_rssi` (her signal, 0 while she hosts), which [RITA](https://github.com/CursedPrograms/RITA)'s STATS shows. Her ESP8266 has no Bluetooth: Bluetooth controllers reach her through NORA's IR link.
+
+<!-- DREAM-ECOSYSTEM:START -->
+
+---
+
 ## Who's nearby (ESP-NOW + Bluetooth LE)
 
 Every robot sends a small **"I'm here"** beacon twice a second and listens for the others'. From the **signal strength** it knows roughly how close each one is, and from how that changes over time whether it's **coming closer, steady or leaving**:
@@ -366,14 +373,6 @@ MILA's ESP8266 **sends** the beacon over ESP-NOW, with what she's doing said in 
 
 ---
 
-<div align="center">&copy; Cursed Entertainment 2026</div>
-
-<div align="center">
-  <a href="https://cursed-entertainment.itch.io/">
-    <img src="https://github.com/CursedPrograms/cursedentertainment/raw/main/images/logos/logo-wide-grey.png" alt="Cursed Entertainment" width="250"/>
-  </a>
-</div>
-
 <div align="center">
   <a href="https://github.com/SynthWomb">
     <img src="https://github.com/SynthWomb/synth.womb/blob/main/logos/synthwomb07.png?raw=true" alt="SynthWomb" width="200"/>
@@ -382,11 +381,16 @@ MILA's ESP8266 **sends** the beacon over ESP-NOW, with what she's doing said in 
 
 ---
 
-## WiFi signal
+<div align="center">&copy; Cursed Entertainment 2026</div>
 
-Her `/status` has `wifi_rssi` (her signal, 0 while she hosts), which [RITA](https://github.com/CursedPrograms/RITA)'s STATS shows. Her ESP8266 has no Bluetooth: Bluetooth controllers reach her through NORA's IR link.
+<div align="center">
+  <a href="https://cursed-entertainment.itch.io/">
+    <img src="https://github.com/CursedPrograms/cursedentertainment/raw/main/images/logos/logo-wide-grey.png" alt="Cursed Entertainment" width="250"/>
+  </a>
+</div>
 
-<!-- DREAM-ECOSYSTEM:START -->
+---
+
 ## The DREAM Robotics ecosystem
 
 **Minds** — [DREAM](https://github.com/CursedPrograms/DREAM) companion · [TINA](https://github.com/CursedPrograms/TINA) engineer · [NINA](https://github.com/CursedPrograms/NINA) caretaker · [RIFT](https://github.com/CursedPrograms/RIFT) fleet hub · [LYCEA](https://github.com/CursedPrograms/LYCEA) training school  

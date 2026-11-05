@@ -27,7 +27,7 @@
       <li><a href="#controllers">Controllers</a></li>
       <li><a href="#near">Nearby</a></li>
       <li><a href="#screens">Screens</a></li>
-      <li><a href="https://github.com/CursedPrograms/MILA">GitHub</a></li>
+      <li><a href="https://github.com/CursedPrograms/MILA-Robot-v00">GitHub</a></li>
     </ul>
   </div>
 </nav>
@@ -37,9 +37,9 @@
     <div class="eyebrow">Cursed Entertainment</div>
     <h1>MILA</h1>
     <p class="tagline">Miniature Integrated Logic Automaton</p>
-    <p class="lede">A small tank-chassis robot you can drive over WiFi. It hosts its own web dashboard, streams live sensor data, and can steer itself around obstacles.</p>
+    <p class="lede">A small tank-chassis robot you can drive over WiFi. She hosts her own web dashboard, streams live sensor data, and can steer itself around obstacles.</p>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/CursedPrograms/MILA">View on GitHub</a>
+      <a class="btn primary" href="https://github.com/CursedPrograms/MILA-Robot-v00">View on GitHub</a>
       <a class="btn" href="#quickstart">Quick start</a>
       <a class="btn" href="https://ko-fi.com/cursedentertainment">Support on Ko-fi</a>
     </div>
@@ -78,7 +78,6 @@
 </header>
 
 <main>
-
 <section id="overview">
   <div class="wrap">
     <h2>Overview</h2>
@@ -88,6 +87,7 @@
         <span class="k">Phone</span>
         <h4>An Android app</h4>
         <p>Hold the stick to drive, let go to stop, with her modes and moves as buttons.</p>
+        <p><a class="btn primary" href="https://github.com/CursedPrograms/MILA-Robot-v00/raw/main/Android%20App/apk/MILA-debug-2026-10-30.apk">Download the APK</a></p>
       </div>
       <div class="card">
         <span class="k">Play</span>
@@ -97,7 +97,7 @@
       <div class="card">
         <span class="k">Drive</span>
         <h4>Three ways to steer</h4>
-        <p>Drive it like a car (WASD), control each track like a tank, or let it roam on its own in obstacle mode.</p>
+        <p>Drive her like a car (WASD), control each track like a tank, or let her roam on her own in obstacle mode.</p>
       </div>
       <div class="card">
         <span class="k">Sense</span>
@@ -112,7 +112,7 @@
       <div class="card">
         <span class="k">Stay safe</span>
         <h4>Collision guard</h4>
-        <p>In manual modes the robot force-stops if it's about to hit something, and a watchdog stops it if your connection drops.</p>
+        <p>In manual modes she force-stops if she's about to hit something, and a watchdog stops her if your connection drops.</p>
       </div>
       <div class="card">
         <span class="k">Speed</span>
@@ -297,6 +297,14 @@ Action distribution (kept rows):
     <p class="muted">A mock MILA lives in <code>scripts/sim</code>. It serves the same endpoints as the firmware with simulated sensor data:</p>
 <pre><span class="p">$</span> scripts/run-sim.sh
 <span class="p">$</span> scripts/run-cpp.sh --host 127.0.0.1</pre>
+  </div>
+</section>
+
+<section id="signal">
+  <div class="wrap">
+    <h2>WiFi signal</h2>
+    <h3 class="title">How well she hears the network</h3>
+    <p>Her <code>/status</code> has <code>wifi_rssi</code> (her signal, 0 while she hosts), which <a href="https://cursedprograms.github.io/RITA/">RITA</a>&rsquo;s STATS shows. Her ESP8266 has no Bluetooth: Bluetooth controllers reach her through NORA&rsquo;s IR link.</p>
   </div>
 </section>
 
