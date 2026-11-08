@@ -82,6 +82,8 @@ end
 
 cmd(link::WifiLink, action) = get_async(link, "/cmd?v=$action")
 setmode(link::WifiLink, m) = get_async(link, "/mode?v=$m")
+talk_toggle(link::WifiLink) = get_async(link, "/talkmute?on=toggle")         # T: her buzzer when she chats on / off (/talkmute)
+chat_toggle(link::WifiLink) = get_async(link, "/talkmute?chat_off=toggle")   # C: her chatting with the fleet on / off (/talkmute)
 
 # ----------------------------------------------------------------------------
 # UI
@@ -270,6 +272,10 @@ function main(args = ARGS)
                 set_mode("obstacle")
             elseif k == Keyboard.space
                 stop_drive()
+            elseif k == Keyboard.t
+                talk_toggle(link)
+            elseif k == Keyboard.c
+                chat_toggle(link)
             elseif mode[] == "wasd" && haskey(key_wasd, k)
                 start_drive(key_wasd[k])
             elseif mode[] == "tank" && haskey(key_tank, k)

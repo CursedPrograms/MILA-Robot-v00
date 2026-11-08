@@ -5,10 +5,11 @@
 // by beeping the source, one tone per symbol (bfToneHz/bfToneMs), scaled to
 // its own voice. Utterances 0-6 are phrases, 7-13 the matching replies:
 // 0 hello, 1 how are you, 2 happy, 3 curious, 4 sleepy, 5 let's play, 6 bye.
+// 14-16 are rock, paper, scissors (R, P, S) for the robots' games.
 #pragma once
 #include <Arduino.h>
 
-#define TALK_UTTERANCES 14
+#define TALK_UTTERANCES 17
 #define TALK_GAP_MS 10
 
 static const char TALK_BF_0[] PROGMEM = "++++++++[>+++++++++++++<-]>.+.";  // hello phrase -> "hi" (1.2 s)
@@ -25,14 +26,17 @@ static const char TALK_BF_10[] PROGMEM = "++++++++++[>+++++++++++<-]>+.-------.<
 static const char TALK_BF_11[] PROGMEM = "++++++++++[>+++++++++++<-]>.-----.+++++++++++.---------------.";  // sleepy reply -> "nite" (2.6 s)
 static const char TALK_BF_12[] PROGMEM = "+++++++++++[>+++++++++++<-]>.<++++[>-----<-]>.++++++++++++++.<+++++++++[>---------<-]>-.";  // play reply -> "yes!" (3.6 s)
 static const char TALK_BF_13[] PROGMEM = "+++++++[>++++++++++++++<-]>.<++++[>++++++<-]>-.<++++[>-----<-]>.<++++++[>-----------<-]>--.";  // bye reply -> "bye!" (3.7 s)
+static const char TALK_BF_14[] PROGMEM = "+++++++++[>+++++++++<-]>+.";  // rock move -> "R" (1.0 s)
+static const char TALK_BF_15[] PROGMEM = "++++++++[>++++++++++<-]>.";  // paper move -> "P" (1.0 s)
+static const char TALK_BF_16[] PROGMEM = "+++++++[>++++++++++++<-]>-.";  // scissors move -> "S" (1.1 s)
 
 static const char* const TALK_BF[TALK_UTTERANCES] PROGMEM = {
-  TALK_BF_0, TALK_BF_1, TALK_BF_2, TALK_BF_3, TALK_BF_4, TALK_BF_5, TALK_BF_6, TALK_BF_7, TALK_BF_8, TALK_BF_9, TALK_BF_10, TALK_BF_11, TALK_BF_12, TALK_BF_13
+  TALK_BF_0, TALK_BF_1, TALK_BF_2, TALK_BF_3, TALK_BF_4, TALK_BF_5, TALK_BF_6, TALK_BF_7, TALK_BF_8, TALK_BF_9, TALK_BF_10, TALK_BF_11, TALK_BF_12, TALK_BF_13, TALK_BF_14, TALK_BF_15, TALK_BF_16
 };
 
 // What each utterance prints, for logs and web pages.
 static const char* const TALK_TEXT[TALK_UTTERANCES] = {
-  "hi", "hru?", "yay", "hm?", "zzz", "play", "bye", "hi!", "ok:)", "yay!", "oh!", "nite", "yes!", "bye!"
+  "hi", "hru?", "yay", "hm?", "zzz", "play", "bye", "hi!", "ok:)", "yay!", "oh!", "nite", "yes!", "bye!", "R", "P", "S"
 };
 
 // Symbol n (0 = end) of utterance u, read from flash.
@@ -61,12 +65,18 @@ static inline uint16_t bfToneMs(char c) { return c == '.' ? 80 : 28; }
 // Non-blocking: talkStart(u), then call talkStep(pin, voicePct) every loop;
 // each symbol is a tone() of bfToneHz * voicePct / 100. Returns false once
 // it's quiet.
+//
+// talkMuted: her Brainfuck talking is muted (RIFT's Fleet/talk_mute.py, her own
+// /talkmute switch): talkStart and talkPlayBlocking say nothing, and setting it
+// stops whatever she's saying at the next talkStep. The sketch sets it (from its
+// /talkmute, or MUTE:<0|1> on serial) and keeps it across restarts.
+static bool          talkMuted     = false;
 static int8_t        talkUtterance = -1;
 static uint16_t      talkPos       = 0;
 static unsigned long talkNextMs    = 0;
 
 static inline void talkStart(int u) {
-  if (u < 0 || u >= TALK_UTTERANCES) return;
+  if (u < 0 || u >= TALK_UTTERANCES || talkMuted) return;
   talkUtterance = u;
   talkPos       = 0;
   talkNextMs    = 0;
@@ -74,6 +84,7 @@ static inline void talkStart(int u) {
 
 static inline bool talkStep(uint8_t pin, uint8_t voicePct) {
   if (talkUtterance < 0) return false;
+  if (talkMuted) { talkUtterance = -1; noTone(pin); return false; }
   if (millis() < talkNextMs) return true;
   char c = talkSymbol(talkUtterance, talkPos++);
   if (!c) { talkUtterance = -1; noTone(pin); return false; }
@@ -86,7 +97,7 @@ static inline bool talkStep(uint8_t pin, uint8_t voicePct) {
 // Blocking: plays utterance u through the robot's own beep(freq, ms), for
 // sketches whose beep() has to pause something (IRremote shares Timer2).
 static inline void talkPlayBlocking(int u, uint8_t voicePct, void (*beep)(unsigned int, unsigned int)) {
-  if (u < 0 || u >= TALK_UTTERANCES) return;
+  if (u < 0 || u >= TALK_UTTERANCES || talkMuted) return;
   for (uint16_t n = 0;; n++) {
     char c = talkSymbol(u, n);
     if (!c) break;

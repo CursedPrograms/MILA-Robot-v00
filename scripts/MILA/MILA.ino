@@ -277,6 +277,7 @@ void setup() {
   myServo.attach(11);
 
   IrReceiver.begin(irPin, ENABLE_LED_FEEDBACK);
+  loadRemote();   // her own remote, if she's learned it
 
   Wire.begin();
   delay(20);
@@ -487,6 +488,67 @@ void updateLightSensor() {
 }
 
 // =====================
+// ---- Her own remote, learned ----
+// IRremote turns noise into made-up frames (Sony, RC5, ...) whose command is often 0x0 or 0x1:
+// her mode buttons. Other robots' remotes send those too (WHIP's "1" is 0x0), and so do the link
+// frames NORA sends the other robots. Any of them knocked her out of OBSTACLE and she stood still.
+// So she obeys one remote: the first press of a button only her remote has (an arrow or OK) teaches
+// her its protocol and address, kept in EEPROM; after that every other frame is ignored.
+// (Hold OK for 3 s and she forgets it, to learn a new remote.)
+#include <EEPROM.h>
+const int REMOTE_EE = 64;            // magic, protocol, address low, address high
+const uint8_t REMOTE_MAGIC = 0xB7;
+uint8_t remoteProto = 0;             // 0: not learned yet (every frame counts, as before)
+uint16_t remoteAddr = 0;
+
+void loadRemote() {
+  if (EEPROM.read(REMOTE_EE) != REMOTE_MAGIC) return;
+  remoteProto = EEPROM.read(REMOTE_EE + 1);
+  remoteAddr = EEPROM.read(REMOTE_EE + 2) | (EEPROM.read(REMOTE_EE + 3) << 8);
+}
+
+void saveRemote(uint8_t proto, uint16_t addr) {
+  remoteProto = proto;
+  remoteAddr = addr;
+  EEPROM.update(REMOTE_EE, proto ? REMOTE_MAGIC : 0);
+  EEPROM.update(REMOTE_EE + 1, proto);
+  EEPROM.update(REMOTE_EE + 2, addr & 0xFF);
+  EEPROM.update(REMOTE_EE + 3, addr >> 8);
+}
+
+bool fleetLinkAddress(uint16_t a) { return a >= 0x0DA1 && a <= 0x0DAF; }   // NORA's / RIFT's link frames
+
+// Is this frame from her own remote? Learns it from the first arrow / OK.
+bool fromMyRemote() {
+  const IRData& d = IrReceiver.decodedIRData;
+  if (d.protocol == SAMSUNG && fleetLinkAddress(d.address)) return false;   // a link frame for someone else
+  if (remoteProto) return d.protocol == remoteProto && d.address == remoteAddr;
+  const uint8_t c = d.command;
+  if (!(d.flags & IRDATA_FLAGS_IS_REPEAT) &&
+      (c == IR_FORWARD || c == IR_BACKWARD || c == IR_LEFT || c == IR_RIGHT || c == IR_OK)) {
+    saveRemote(d.protocol, d.address);
+    Serial.print("REMOTE:");
+    Serial.print(getProtocolString(d.protocol));
+    Serial.print(":0x");
+    Serial.println(d.address, HEX);
+    return true;
+  }
+  return c > IR_DANCE;   // not learned yet: only the mode buttons (0x0-0x5, noise's favourites) wait for it
+}
+
+// OK held 3 s: forget the remote (the next arrow or OK teaches a new one)
+void forgetRemoteIfHeld(bool isRepeat) {
+  static unsigned long okSince = 0;
+  if (IrReceiver.decodedIRData.command != IR_OK) { okSince = 0; return; }
+  if (!isRepeat) { okSince = millis(); return; }
+  if (okSince && millis() - okSince > 3000) {
+    okSince = 0;
+    saveRemote(0, 0);
+    Serial.println("REMOTE:forgotten");
+    beep(300, 300);
+  }
+}
+
 void checkIR() {
   if (IrReceiver.decode()) {
     if (IrReceiver.decodedIRData.protocol == SAMSUNG && IrReceiver.decodedIRData.address == MILA_LINK_ADDRESS) {
@@ -497,8 +559,9 @@ void checkIR() {
       Serial.println(c, HEX);
       runLinkCommand(c, isRepeat);
 
-    } else if (IrReceiver.decodedIRData.protocol != UNKNOWN) {
+    } else if (IrReceiver.decodedIRData.protocol != UNKNOWN && fromMyRemote()) {
       bool isRepeat = IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT;
+      forgetRemoteIfHeld(isRepeat);
       if (!isRepeat) lastIRCmd = IrReceiver.decodedIRData.command;
       lastIRMs = millis();
       bool irTurn = lastIRCmd == IR_LEFT || lastIRCmd == IR_RIGHT;
@@ -887,6 +950,9 @@ void checkSerial() {
 
   } else if (cmd.startsWith("SPEED:")) {
     setSpeedPct(cmd.substring(6).toInt());
+
+  } else if (cmd.startsWith("TALKMUTE:")) {   // her Brainfuck talking (the ESP8266's /talkmute)
+    talkMuted = cmd.substring(9).toInt() == 1;
 
   } else if (cmd == "MUTE") {
     setBuzzerSilent(true);

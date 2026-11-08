@@ -131,6 +131,8 @@ namespace Mila
 
         public void Cmd(string action) { queue.Add("/cmd?v=" + action); }
         public void Mode(string m) { queue.Add("/mode?v=" + m); }
+        public void TalkToggle() { queue.Add("/talkmute?on=toggle"); }         // T: her buzzer when she chats on / off (/talkmute)
+        public void ChatToggle() { queue.Add("/talkmute?chat_off=toggle"); }   // C: her chatting with the fleet on / off (/talkmute)
 
         // Synchronous STOP for shutdown, when the worker may not get to run.
         public void StopNow()
@@ -924,6 +926,8 @@ namespace Mila
             else if (e.KeyCode == Keys.D2) SetMode("tank");
             else if (e.KeyCode == Keys.D3) SetMode("obstacle");
             else if (e.KeyCode == Keys.Space) StopDrive();
+            else if (e.KeyCode == Keys.T) link.TalkToggle();   // her buzzer when she chats
+            else if (e.KeyCode == Keys.C) link.ChatToggle();   // her chatting with the fleet
             else
             {
                 string a = KeyDrive(e.KeyCode);

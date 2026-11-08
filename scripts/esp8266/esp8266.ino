@@ -3,6 +3,7 @@
 #include <ESP8266mDNS.h>
 #include <ArduinoOTA.h>
 #include <espnow.h>
+#include <EEPROM.h>       // one byte: her Brainfuck talking muted (/talkmute)
 #include "keys_page.h"   // /keys: every key and button (generated from scripts/keymap.py)
 
 // === FLEET PROXIMITY (ESP-NOW) ===
@@ -95,6 +96,11 @@ IPAddress fleetHost() {
 }
 const unsigned long FLEET_HEARTBEAT_MS = 10000;   // the registry drops entries after 20 s of silence
 const char* const MY_CAPS = "wasd,tank,obstacle_avoidance,talk:5010";   // talk:<port>: RIFT can /chirp here
+bool talkMuted = false;              // her sound switch: chats, but the buzzer stays quiet (/talkmute, EEPROM)
+bool chatOff = false;                // her chat switch: no Brainfuck communication at all (/talkmute, EEPROM)
+const int TALK_MUTE_ADDR = 0;
+const int CHAT_OFF_ADDR = 1;
+const uint8_t TALK_MUTE_ON = 0xA5;
 
 // === RADAR (passive imposter spotter) ===
 // MILA listens to the WiFi around her and flags anything that isn't one of
@@ -276,6 +282,9 @@ void wifiWatch() {
 void setup() {
   Serial.begin(115200);
   delay(100);
+  EEPROM.begin(4);
+  talkMuted = EEPROM.read(TALK_MUTE_ADDR) == TALK_MUTE_ON;   // anything else (a fresh chip's 0xFF): she talks
+  chatOff = EEPROM.read(CHAT_OFF_ADDR) == TALK_MUTE_ON;
 
   climb(WIFI_JOIN_TIMEOUT_MS);
 
@@ -293,6 +302,7 @@ void setup() {
   server.on("/scan",   handleScan);
   server.on("/mind",   handleMind);
   server.on("/chirp",  handleChirp);
+  server.on("/talkmute", handleTalkMute);
 
   server.begin();
   setupFleetList();                 // :5000, for the robots below her when she hosts
@@ -313,6 +323,8 @@ void setup() {
 
 // =====================
 void loop() {
+  static unsigned long talkMuteSentMs = 0;   // the UNO keeps no settings: tell it, now and every 10 s
+  if (!talkMuteSentMs || millis() - talkMuteSentMs > 10000) { sendTalkMute(); talkMuteSentMs = millis() | 1; }
   fleetNearLoop();
   radarLoop();
   wifiWatch();
@@ -416,6 +428,14 @@ void fleetRegister() {
 // RIFT's fleet conversations: /chirp?u=<0-13> says that utterance (a Brainfuck
 // phrase, see ../MILA/talk_bf.h) on the UNO's buzzer, which beeps it.
 void handleChirp() {
+  if (chatOff) {
+    server.send(409, "application/json", "{\"ok\":false,\"reason\":\"chat_off\"}");
+    return;
+  }
+  if (talkMuted) {   // said, without the buzzer
+    server.send(200, "application/json", "{\"ok\":true,\"silent\":true}");
+    return;
+  }
   int u = server.hasArg("u") ? server.arg("u").toInt() : -1;
   if (!server.hasArg("u") || u < 0 || u > 13) {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"use /chirp?u=0-13\"}");
@@ -424,6 +444,28 @@ void handleChirp() {
   Serial.print("TALK:");
   Serial.println(u);
   server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// Her two talk switches (RIFT's Fleet/talk_mute.py, the buttons on her page, T / C on her PC
+// controllers), kept in EEPROM. No PIN: they only quiet her.
+//   /talkmute?on=0|1|toggle         sound: she chats, but the buzzer stays quiet (the UNO hears TALKMUTE:<0|1>)
+//   /talkmute?chat_off=0|1|toggle   chat: no Brainfuck communication at all
+void sendTalkMute() {
+  Serial.print("TALKMUTE:");
+  Serial.println(talkMuted ? 1 : 0);
+}
+
+void handleTalkMute() {
+  if (server.hasArg("on")) talkMuted = server.arg("on") == "toggle" ? !talkMuted : server.arg("on").toInt() != 0;
+  if (server.hasArg("chat_off")) chatOff = server.arg("chat_off") == "toggle" ? !chatOff : server.arg("chat_off").toInt() != 0;
+  if (server.hasArg("on") || server.hasArg("chat_off")) {
+    EEPROM.write(TALK_MUTE_ADDR, talkMuted ? TALK_MUTE_ON : 0);
+    EEPROM.write(CHAT_OFF_ADDR, chatOff ? TALK_MUTE_ON : 0);
+    EEPROM.commit();
+    sendTalkMute();
+  }
+  server.send(200, "application/json", String("{\"talk_muted\":") + (talkMuted ? "true" : "false") +
+              ",\"chat_off\":" + (chatOff ? "true" : "false") + "}");
 }
 
 // =====================
@@ -756,6 +798,8 @@ void handleStatus() {
   json += "\"scan_f\":"  + String(scanF) + ",";
   json += "\"scan_r\":"  + String(scanR) + ",";
   json += "\"scan_ms\":" + String(scanAtMs ? (long)(millis() - scanAtMs) : -1L) + ",";   // how old it is
+  json += "\"talk_muted\":" + String(talkMuted ? "true" : "false") + ",";
+  json += "\"chat_off\":" + String(chatOff ? "true" : "false") + ",";
   json += "\"wifi_rssi\":" + String(WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0);   // her signal (0: she hosts)
   json += "}";
   server.send(200, "application/json", json);
@@ -1056,6 +1100,8 @@ void handleRoot() {
   <div class="mode-row">
     <button class="mode-btn" onclick="sendCmd('HELLO')" title="she shakes her sonar head and beeps">👋 HELLO</button>
     <button class="mode-btn" onclick="sendCmd('DANCE')" title="on the spot, in WASD or TANK">💃 DANCE</button>
+    <button class="mode-btn active" id="btn-talk" onclick="talkSwitch('on')" title="sound: her buzzer when she chats (off: she chats quietly; RIFT has the same switch)">🔊 SOUND</button>
+    <button class="mode-btn active" id="btn-chat" onclick="talkSwitch('chat_off')" title="chat: her Brainfuck with the fleet at all (RIFT has the same switch)">💬 CHAT</button>
   </div>
 
   <div class="speed-row">
@@ -1328,11 +1374,24 @@ void handleRoot() {
   pollFleet();
 
   // Status polling
+  // her two talk switches (/talkmute): the buzzer when she chats, and the chatting itself
+  function showTalk(d) {
+    if (d.talk_muted === undefined) return;
+    const t = document.getElementById('btn-talk'), c = document.getElementById('btn-chat');
+    t.textContent = d.talk_muted ? '🔇 SOUND OFF' : '🔊 SOUND';
+    t.classList.toggle('active', !d.talk_muted);
+    c.textContent = d.chat_off ? '💬 CHAT OFF' : '💬 CHAT';
+    c.classList.toggle('active', !d.chat_off);
+  }
+  function talkSwitch(which) {
+    fetch('/talkmute?' + which + '=toggle').then(r => r.json()).then(showTalk).catch(() => {});
+  }
   function poll() {
     fetch('/status')
       .then(r => r.json())
       .then(d => {
         connected = true;
+        showTalk(d);
         document.getElementById('connDot').style.background = '#00ff88';
         document.getElementById('connDot').style.boxShadow  = '0 0 8px #00ff88';
 

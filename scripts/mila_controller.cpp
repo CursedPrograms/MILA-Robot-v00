@@ -26,6 +26,8 @@
 //   Speed:        drag the slider for an exact value, SPD -/+ step by 25
 //   Gamepad:      left stick / D-pad drive (TANK: left+right stick = tracks),
 //                 RT/LT raise/lower speed, A = stop, LB/RB = change mode
+//   T             her buzzer when she chats on / off (she chats quietly; RIFT has the same switch)
+//   C             her chatting with the fleet in Brainfuck on / off
 //   Esc           quit
 //   Everything is also clickable with the mouse.
 
@@ -188,6 +190,8 @@ public:
     // Commands are fire-and-forget; each runs on its own thread like before.
     void cmd(const std::string& action) { fireAndForget("/cmd?v=" + action); }
     void mode(const std::string& m) { fireAndForget("/mode?v=" + m); }
+    void talkToggle() { fireAndForget("/talkmute?on=toggle"); }         // T: her buzzer when she chats on / off (/talkmute)
+    void chatToggle() { fireAndForget("/talkmute?chat_off=toggle"); }   // C: her chatting with the fleet on / off (/talkmute)
 
 private:
     bool get(const std::string& path, std::string* body) {
@@ -1155,6 +1159,8 @@ static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             else if (wp == '2') setMode("tank");
             else if (wp == '3') setMode("obstacle");
             else if (wp == VK_SPACE) stopDrive();
+            else if (wp == 'T') g.link->talkToggle();
+            else if (wp == 'C') g.link->chatToggle();
             else if (const char* a = keyDrive(wp)) startDrive(a);
             return 0;
         }

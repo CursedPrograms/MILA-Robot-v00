@@ -17,6 +17,8 @@ KEYMAP = [
         ("1 / 2 / 3", "WASD / TANK / OBSTACLE mode"),
         ("F", "FOLLOW mode: she keeps your hand 30 cm from her sonar (Python controller; a button on her web page)"),
         ("H / N", "HELLO / DANCE, on the spot, in WASD or TANK (Python controller; buttons on her web page)"),
+        ("T", "her buzzer when she chats with the fleet on / off: off, she chats quietly (desktop controllers; SOUND on her page; RIFT too)"),
+        ("C", "her chatting with the fleet in Brainfuck on / off (desktop controllers; CHAT on her page; RIFT too)"),
         ("W / Up, S / Down", "forward / back (WASD mode, hold)"),
         ("A / Left, D / Right", "turn left / right (WASD mode, hold)"),
         ("W+A, W+D, S+A, S+D", "curve: one track drives (Python controller; the stick too)"),

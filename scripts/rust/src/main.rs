@@ -117,6 +117,16 @@ impl Link {
         let _ = self.tx.send(format!("/mode?v={}", m));
     }
 
+    /// T: her buzzer when she chats on / off (/talkmute)
+    fn talk_toggle(&self) {
+        let _ = self.tx.send("/talkmute?on=toggle".to_string());
+    }
+
+    /// C: her chatting with the fleet on / off (/talkmute)
+    fn chat_toggle(&self) {
+        let _ = self.tx.send("/talkmute?chat_off=toggle".to_string());
+    }
+
     /// Synchronous STOP for shutdown, when the worker thread may not get to run.
     fn stop_now(&self) {
         let _ = self.agent.get(&format!("{}/cmd?v=STOP", self.base)).call();
@@ -279,6 +289,8 @@ impl App {
                         Key::Num2 => self.run(Act::Mode("tank")),
                         Key::Num3 => self.run(Act::Mode("obstacle")),
                         Key::Space => self.stop_drive(),
+                        Key::T => self.link.talk_toggle(),
+                        Key::C => self.link.chat_toggle(),
                         k => {
                             if let Some(a) = key_drive(&self.mode, k) {
                                 self.start_drive(a);

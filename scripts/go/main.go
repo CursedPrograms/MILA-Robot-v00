@@ -145,6 +145,8 @@ func (l *WifiLink) send(path string) {
 
 func (l *WifiLink) Cmd(action string) { l.send("/cmd?v=" + action) }
 func (l *WifiLink) Mode(m string)     { l.send("/mode?v=" + m) }
+func (l *WifiLink) TalkToggle()       { l.send("/talkmute?on=toggle") }       // T: her buzzer when she chats on / off (/talkmute)
+func (l *WifiLink) ChatToggle()       { l.send("/talkmute?chat_off=toggle") } // C: her chatting with the fleet on / off (/talkmute)
 
 // StopNow is a synchronous STOP for shutdown.
 func (l *WifiLink) StopNow() { _, _ = l.get("/cmd?v=STOP") }
@@ -329,6 +331,10 @@ func (g *Game) Update() error {
 			g.setMode("obstacle")
 		case ebiten.KeySpace:
 			g.stopDrive()
+		case ebiten.KeyT: // her buzzer when she chats
+			g.link.TalkToggle()
+		case ebiten.KeyC: // her chatting with the fleet
+			g.link.ChatToggle()
 		default:
 			if a, ok := g.keymap()[k]; ok {
 				g.startDrive(a)

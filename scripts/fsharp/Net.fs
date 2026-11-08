@@ -73,6 +73,8 @@ type WifiLink(initialHost: string, initialPort: int) =
     member _.Cmd(action: string) = queue.Add("/cmd?v=" + action)
 
     member _.Mode(m: string) = queue.Add("/mode?v=" + m)
+    member _.TalkToggle() = queue.Add("/talkmute?on=toggle")         // T: her buzzer when she chats on / off (/talkmute)
+    member _.ChatToggle() = queue.Add("/talkmute?chat_off=toggle")   // C: her chatting with the fleet on / off (/talkmute)
 
     /// Synchronous STOP for shutdown, when the worker may not get to run.
     member _.StopNow() =

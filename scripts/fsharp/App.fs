@@ -500,6 +500,8 @@ type MainForm(settings0: Settings, autoHost: bool) as this =
             | Keys.D2 -> setMode "tank"
             | Keys.D3 -> setMode "obstacle"
             | Keys.Space -> stopDrive ()
+            | Keys.T -> link.TalkToggle()   // her buzzer when she chats
+            | Keys.C -> link.ChatToggle()   // her chatting with the fleet
             | k ->
                 match keyDrive k with
                 | "" -> ()

@@ -117,6 +117,11 @@ class WifiLink:
     def mode(self, m):
         self._send(f"/mode?v={m}")
 
+    def talk_toggle(self, which="on"):
+        """One of her two talk switches (/talkmute, RIFT's too): "on" the buzzer when she chats,
+        "chat_off" the chatting itself."""
+        self._send(f"/talkmute?{which}=toggle")
+
     def move_to(self, host, port):
         """Talk to another address (EMULATE on / off); unlock again there."""
         self.base = f"http://{host}:{port}"
@@ -333,6 +338,8 @@ def main():
         add((280, 100, 120, 40), "OBSTACLE", lambda: set_mode("obstacle")),
         add((20, 200, 90, 36), "FOLLOW", lambda: set_mode("follow")),
     ]
+    talk_btn = add((118, 200, 60, 36), "SOUND", lambda: link.talk_toggle("on"))        # her buzzer when she chats (T)
+    chat_btn = add((182, 200, 60, 36), "CHAT", lambda: link.talk_toggle("chat_off"))   # her chatting at all (C)
     show_btns = [add((250, 200, 72, 36), "HELLO", lambda: link.cmd("HELLO")),   # on the spot, in WASD or TANK
                  add((328, 200, 72, 36), "DANCE", lambda: link.cmd("DANCE"))]
 
@@ -453,6 +460,10 @@ def main():
                     link.cmd("HELLO")
                 elif ev.key == pygame.K_n:
                     link.cmd("DANCE")
+                elif ev.key == pygame.K_t:
+                    link.talk_toggle("on")
+                elif ev.key == pygame.K_c:
+                    link.talk_toggle("chat_off")
                 elif ev.key == pygame.K_1:
                     set_mode("wasd")
                 elif ev.key == pygame.K_2:
@@ -508,6 +519,8 @@ def main():
         # ---- draw ----
         screen.fill(BG)
         t = link.telemetry()
+        talk_btn.active = link.ok and not t.get("talk_muted")   # lit: on
+        chat_btn.active = link.ok and not t.get("chat_off")
         # her mode is the switch: MIND (from M here, or her page) = thinking, anything else = not
         in_mind = link.ok and t.get("mode") == "mind"
         if in_mind and not her_mind.on and mind_state["capable"]:
